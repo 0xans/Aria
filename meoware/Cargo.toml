@@ -1,0 +1,16 @@
+[package]
+name = "meoware"
+version.workspace = true
+edition.workspace = true
+
+# I'll use this as a feature flag to enable verbose output in release builds for testing.
+[features]
+verbose = []
+
+[lib]
+name = "meoware"
+path = "src/lib.rs"
+
+[[bin]]
+name = "meoware"
+path = "src/main.rs"
