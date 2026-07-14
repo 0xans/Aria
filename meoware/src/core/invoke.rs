@@ -7,13 +7,12 @@ use crate::core::types::NTSTATUS;
 static SC_REG_EAX: AtomicU32 = AtomicU32::new(0);
 static SC_JMP_TARGET: AtomicU64 = AtomicU64::new(0);
 
-/**
-  * Obfuscated indirect syscall trampoline
-  * Uses different opcodes than standard SysWhispers pattern
-  *     - xchg rcx, r10 instead of mov r10, rcx (different byte sequence: 49 87 CA vs 4C 8B D1)
-  *     - xor eax, eax + mov ax, [rip+ssn] instead of mov eax, [rip+ssn] (breaks pattern match)
-  *     - push + ret instead of jmp (different control flow signature)
-  * */
+
+// Obfuscated indirect syscall trampoline
+// Uses different opcodes than standard SysWhispers pattern
+//     - xchg rcx, r10 instead of mov r10, rcx (different byte sequence: 49 87 CA vs 4C 8B D1)
+//     - xor eax, eax + mov ax, [rip+ssn] instead of mov eax, [rip+ssn] (breaks pattern match)
+//     - push + ret instead of jmp (different control flow signature)
 #[cfg(target_arch = "x86_64")]
 global_asm!(
     ".global IndirectCallDispatch",
