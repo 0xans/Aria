@@ -7,5 +7,7 @@ fn main() {
         if !ssn_table::initialize_syscalls(core::ptr::null_mut()) {
             return;
         }
+
+        meoware::core::demo::demo(9224);
     }
 }

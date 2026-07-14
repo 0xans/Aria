@@ -12,6 +12,7 @@ pub const KERNEL32_HASH: u32 = 0xab506c86;
 
 /* ntdll - Nt* syscalls */
 pub const NTOPENPROCESS_HASH: u32 = 0x8088b60b;
+pub const NTCLOSE_HASH: u32 = 0x4cf64d4e;
 
 /* kernel32 functions */
 pub const CREATEPROCESSW_HASH: u32 = 0x603dac20;

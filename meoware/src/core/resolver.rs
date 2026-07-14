@@ -5,11 +5,11 @@ use core::slice::from_raw_parts;
 
 use crate::core::types::*;
 
-unsafe fn peb() -> usize {
+unsafe fn peb() -> usize { unsafe {
     let peb: usize;
     asm!("mov {}, gs:[0x60]", out(reg) peb);
     peb
-}
+}}
 
 unsafe fn wide_ascii_lower(wide: u16) -> u8 {
     let byte = (wide & 0xFF) as u8;
@@ -20,22 +20,22 @@ unsafe fn wide_ascii_lower(wide: u16) -> u8 {
     }
 }
 
-unsafe fn read_mem<T: Copy>(addr: *const T) -> T {
+unsafe fn read_mem<T: Copy>(addr: *const T) -> T { unsafe {
     read(addr)
-}
+}}
 
-pub unsafe fn ldr_module_search(module_hash: u32) -> HANDLE {
+pub unsafe fn ldr_module_search(module_hash: u32) -> HANDLE { unsafe {
     module_peb_by_hash(module_hash).map_or(null_mut(), |base| base as HANDLE)
-}
+}}
 
-pub unsafe fn ldr_function_by_hash(module: HANDLE, hash: u32) -> HANDLE {
+pub unsafe fn ldr_function_by_hash(module: HANDLE, hash: u32) -> HANDLE { unsafe {
     if module.is_null() {
         return null_mut();
     }
     resolve_export_by_hash(module as usize, hash).map_or(null_mut(), |addr| addr as HANDLE)
-}
+}}
 
-unsafe fn module_peb_by_hash(target_hash: u32) -> Option<usize> {
+unsafe fn module_peb_by_hash(target_hash: u32) -> Option<usize> { unsafe {
     let p = peb();
     let ldr = *((p + 0x18) as *const usize);
     if ldr == 0 {
@@ -64,9 +64,9 @@ unsafe fn module_peb_by_hash(target_hash: u32) -> Option<usize> {
         entry = *(entry as *const usize);
     }
     None
-}
+}}
 
-unsafe fn resolve_export_by_hash(module_base: usize, target_hash: u32) -> Option<*const c_void> {
+unsafe fn resolve_export_by_hash(module_base: usize, target_hash: u32) -> Option<*const c_void> { unsafe {
     if module_base == 0 {
         return None;
     }
@@ -141,4 +141,4 @@ unsafe fn resolve_export_by_hash(module_base: usize, target_hash: u32) -> Option
         }
     }
     None
-}
+}}

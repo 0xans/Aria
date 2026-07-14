@@ -24,6 +24,7 @@ mod arch {
 #[repr(C)]
 pub struct SyscallSsns {
     pub(crate) nt_open_process: SyscallEntry,
+    pub(crate) nt_close: SyscallEntry,
 }
 
 /**
@@ -60,6 +61,7 @@ unsafe impl Sync for SyscallCell {}
 static NATIVE: SyscallCell = SyscallCell(UnsafeCell::new(SyscallInfo {
     ssns: SyscallSsns {
         nt_open_process: SyscallEntry::empty(),
+        nt_close: SyscallEntry::empty(),
     },
     win32: Win32Funcs {
         create_process_w: core::ptr::null_mut(),
@@ -70,7 +72,7 @@ static NATIVE: SyscallCell = SyscallCell(UnsafeCell::new(SyscallInfo {
     },
 }));
 
-pub unsafe fn initialize_syscalls(mut ntdll: *mut c_void) -> bool {
+pub unsafe fn initialize_syscalls(mut ntdll: *mut c_void) -> bool { unsafe {
     let state = &mut *NATIVE.0.get();
 
     if ntdll.is_null() {
@@ -99,18 +101,19 @@ pub unsafe fn initialize_syscalls(mut ntdll: *mut c_void) -> bool {
 
     // Resolve each syscall - both SSN and pre function syscall address
     resolve_ssn!(nt_open_process, hashes::NTOPENPROCESS_HASH);
+    resolve_ssn!(nt_close, hashes::NTCLOSE_HASH);
 
     state.win32.create_process_w = resolver::ldr_function_by_hash(state.modules.kernel32, hashes::CREATEPROCESSW_HASH);
 
-    state.ssns.nt_open_process.ssn != 0 && !state.ssns.nt_open_process.syscall_addr.is_null()
-}
+    state.ssns.nt_close.ssn != 0 && !state.ssns.nt_close.syscall_addr.is_null()
+}}
 
 unsafe fn extract_syscall_info(
     function: *mut c_void,
     resolve_hooked: bool,
     mut ssn: Option<&mut u16>,
     syscall_address: Option<&mut *mut c_void>,
-) -> bool {
+) -> bool { unsafe {
     if function.is_null() {
         return false;
     }
@@ -162,9 +165,9 @@ unsafe fn extract_syscall_info(
     }
 
     success
-}
+}}
 
-unsafe fn find_hooked_syscall_ssn(function: *mut c_void, ssn: &mut u16) -> bool {
+unsafe fn find_hooked_syscall_ssn(function: *mut c_void, ssn: &mut u16) -> bool { unsafe {
     let stub_size = arch::STUB_SIZE;
     if stub_size == 0 {
         return false;
@@ -188,4 +191,11 @@ unsafe fn find_hooked_syscall_ssn(function: *mut c_void, ssn: &mut u16) -> bool 
     }
 
     false
-}
+}}
+
+/**
+ * Returns a reference to the initialized syscall table 
+ * */
+pub unsafe fn syscall_table() -> &'static SyscallInfo { unsafe {
+    &*NATIVE.0.get()
+}}
