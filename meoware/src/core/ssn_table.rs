@@ -96,6 +96,7 @@ pub struct Win32Funcs {
 /**
  * Struct that contains handles to dynamically resolved modules
  * */
+#[repr(C)]
 pub struct ModuleHandles {
     pub(crate) ntdll: HANDLE,
     pub(crate) kernel32: HANDLE,
@@ -248,7 +249,7 @@ pub unsafe fn initialize_syscalls(mut ntdll: *mut c_void) -> bool { unsafe {
     // Uses raw pointer to teh state to create field pointers without &mut aliasing
     {
         let p = NATIVE.0.get(); // *mut SyscallInfo - raw, no borrow
-        let mut _batch: [(u32, *mut *mut c_void); 12] = [
+        let mut batch: [(u32, *mut *mut c_void); 12] = [
             (hashes::LDRLOADDLL_HASH, core::ptr::addr_of_mut!((*p).win32.ldr_load_dll)),
             (hashes::RTLGETVERSION_HASH, core::ptr::addr_of_mut!((*p).win32.rtl_get_version)),
             (hashes::RTLINITUNICODESTRING_HASH, core::ptr::addr_of_mut!((*p).win32.rtl_init_unicode_string)),
@@ -263,8 +264,7 @@ pub unsafe fn initialize_syscalls(mut ntdll: *mut c_void) -> bool { unsafe {
             (hashes::RTLADDVECTOREDEXCEPTIONHANDLER_HASH, core::ptr::addr_of_mut!((*p).win32.rtl_add_vectored_exception_handler)),
         ];
 
-        // TODO: function to batch resolve multiple exports in a single pass through the export table
-        // resolve_exports_batch(module, mutable batch)
+        resolver::resolve_exports_batch(ntdll, &mut batch);
     }
 
     state.ssns.nt_close.ssn != 0 && !state.ssns.nt_close.syscall_addr.is_null()

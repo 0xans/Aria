@@ -142,3 +142,105 @@ unsafe fn resolve_export_by_hash(module_base: usize, target_hash: u32) -> Option
     }
     None
 }}
+
+
+/**
+ * Batch resolve multiple exports in a single pass through the export table. 
+ * Instead of calling resolve_export_by_hash() N times, this walks the table ONCe and checks each export hash aganist all targets
+ * */
+pub unsafe fn resolve_exports_batch(module: HANDLE, targets: &mut [(u32, *mut *mut c_void)]) { unsafe {
+    if module.is_null() {
+        return;
+    }
+
+    let module_base = module as usize;
+    let dos_header: ImageDosHeader = read_mem(module_base as *const _);
+    if dos_header.e_magic != IMAGE_DOS_SIGNATURE || dos_header.e_lfanew < 0 {
+        return
+    }
+
+    let nt_header_addr = module_base + dos_header.e_lfanew as usize;
+    if *(nt_header_addr as *const u32) != IMAGE_NT_SIGNATURE {
+        return;
+    }
+
+    let opt_hdr = nt_header_addr + 4 + 20;
+    let magic = *(opt_hdr as *const u16);
+    let data_dir_offset = match magic {
+        IMAGE_NT_OPTIONAL_HDR32_MAGIC => 0x60,
+        IMAGE_NT_OPTIONAL_HDR64_MAGIC => 0x70,
+        _ => return,
+    };
+
+    let export_data_dir = read_mem((opt_hdr + data_dir_offset + IMAGE_DIRECTORY_ENTRY_EXPORT * size_of::<ImageDataDirectory>()) as *const ImageDataDirectory);
+    let export_dir_rva = export_data_dir.virtual_address as usize;
+    let export_dir_size = export_data_dir.size as usize;
+    if export_dir_rva == 0 || export_dir_size == 0 {
+        return;
+    }
+
+    let export_dir: ImageExportDirectory = read_mem((module_base + export_dir_rva) as *const _);
+    let funcs = (module_base + export_dir.address_of_functions as usize) as *const u32;
+    let names = (module_base + export_dir.address_of_names as usize) as *const u32;
+    let ordinals = (module_base + export_dir.address_of_name_ordinals as usize) as *const u16;
+
+    // Track how many targets ramain unresolved, also to save time by early exit when all found
+    let mut remaining = targets.len();
+
+    for i in 0..export_dir.number_of_names {
+        if remaining == 0 {
+            break; // All targets are resolved
+        }
+
+        let name_rva = *names.add(i as usize) as usize;
+
+        // Compute the hash for this export name
+        let mut name_hash: u32 = crate::core::hashes::HASH_SEED;
+        let mut ptr = (module_base + name_rva) as *const u8;
+        loop {
+            let byte = *ptr;
+            if byte == 0 {
+                break;
+            }
+
+            let c = if byte >= b'A' && byte <= b'Z' {
+                byte + 32
+            } else {
+                byte
+            };
+
+            name_hash = ((name_hash << 5).wrapping_add(name_hash)).wrapping_add(c as u32);
+            ptr = ptr.add(1);
+        }
+        name_hash ^= crate::core::hashes::HASH_XOR;
+
+        // Check aganist All target hashes
+        for (target_hash, target_ptr) in targets.iter_mut() {
+            // Skip if already resolved target
+            if !(**target_ptr).is_null() {
+                continue;
+            }
+
+            if name_hash == *target_hash {
+                let ordinal_index = *ordinals.add(i as usize) as usize;
+                if ordinal_index >= export_dir.number_of_functions as usize {
+                    continue;
+                }
+
+                let func_rva = *funcs.add(ordinal_index) as usize;
+                if func_rva == 0 {
+                    continue;
+                }
+
+                // Skipp forwarded exports
+                if func_rva >= export_dir_rva && func_rva < export_dir_rva + export_dir_size {
+                    continue;
+                }
+
+                **target_ptr = (module_base + func_rva) as *mut c_void;
+                remaining -= 1;
+                break; // This export matched, move to the next 
+            }
+        }
+    }
+}}
