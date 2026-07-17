@@ -1,45 +1,39 @@
-use crate::debug;
-use crate::core::ssn_table;
-use crate::core::nt;
 use crate::core::types::*;
+use crate::core::win32;
+use crate::debug;
 
-pub unsafe fn demo(pid: u32) { unsafe {
-    debug!("Just a Demo Function ^_^");
+pub unsafe fn demo() {
+    unsafe {
+        let mut os_info: OsVersionInfoExW = core::mem::zeroed();
+        os_info.os_version_info_size = core::mem::size_of::<OsVersionInfoExW>() as u32;
 
-    let table = ssn_table::syscall_table();
-    debug!("[*] NtOpenProcess ==---> 0x{:04X} Syscall Address: 0x{:p}",
-        table.ssns.nt_open_process.ssn, table.ssns.nt_open_process.syscall_addr
-    );
+        let status = win32::rtl_get_version(&mut os_info);
+        if status == STATUS_SUCCESS {
+            let product = match os_info.product_type {
+                1 => "Workstation",
+                2 => "Domain Controller",
+                3 => "Server",
+                _ => "Unknown",
+            };
+            debug!(
+                "[+] OS Version: {}.{} (Build {}) - {}",
+                os_info.major_version,
+                os_info.minor_version,
+                os_info.build_number,
+                product
+            );
 
-    debug!("[*] NtClose ==---> 0x{:04X} Syscall Address: 0x{:p}",
-        table.ssns.nt_close.ssn, table.ssns.nt_close.syscall_addr
-    );
-
-    let mut hprocess: HANDLE = core::ptr::null_mut();
-    let mut oa: ObjectAttributes = core::mem::zeroed();
-    let mut cid = ClientID { 
-        unique_process: pid as HANDLE,
-        unique_thread: core::ptr::null_mut(),
-    };
-
-    initialize_object_attributes(
-        &mut oa, 
-        core::ptr::null_mut(),
-        0,
-        core::ptr::null_mut(), 
-        core::ptr::null_mut(),
-    );
-
-    let status = nt::nt_open_process(&mut hprocess, 0x1F0FFF, &mut oa, &mut cid);
-    if status != STATUS_SUCCESS {
-        debug!("[-] NtOpenProcess returned 0x{:08X} -> Could not open target process", status as u32);
-        return;
+            let friendly = match (os_info.major_version, os_info.build_number) {
+                (10, b) if b >= 22000 => "Windows 11",
+                (10, _) => "Windows 10",
+                // if 6 and minor_version is 3 -> Win8.1 
+                // if 6 and minor_version is 2 -> Win8
+                // if 6 and minor_version is 1 -> Win7
+                _ => "Unknown Windows",
+            };
+            debug!("[+] Detected: {} (Build {})", friendly, os_info.build_number);
+        } else {
+            debug!("[-] RtlGetVersion failed with 0x{:08X}", status as u32);
+        }
     }
-    debug!("[+] Got the handle -> {:?}", hprocess);
-
-    debug!("[>] Pause");
-    std::io::stdin().read_line(&mut String::new()).unwrap();
-
-    nt::nt_close(hprocess);
-    debug!("Done..");
-}}
+}

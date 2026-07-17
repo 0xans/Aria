@@ -57,9 +57,6 @@ pub struct ImageExportDirectory {
     pub address_of_name_ordinals: u32, // RVA from base of image
 }
 
-
-
-
 #[repr(C)]
 pub struct ObjectAttributes {
     pub length: u32,
@@ -89,15 +86,23 @@ pub unsafe fn initialize_object_attributes(
     name: *mut UnicodeString,
     attr: u32,
     root: HANDLE,
-    sec: *mut core::ffi::c_void
-) { unsafe {
-    (*p).length = core::mem::size_of::<ObjectAttributes>() as u32;
-    (*p).root_directory = root;
-    (*p).object_name = name;
-    (*p).attributes = attr;
-    (*p).security_descriptor = sec;
-    (*p).security_quality_of_service = core::ptr::null_mut();
-}}
+    sec: *mut core::ffi::c_void,
+) {
+    unsafe {
+        (*p).length = core::mem::size_of::<ObjectAttributes>() as u32;
+        (*p).root_directory = root;
+        (*p).object_name = name;
+        (*p).attributes = attr;
+        (*p).security_descriptor = sec;
+        (*p).security_quality_of_service = core::ptr::null_mut();
+    }
+}
+
+#[repr(C)]
+pub struct IoStatusBlock {
+    pub status: NTSTATUS,
+    pub information: usize,
+}
 
 // Struct to hold SSN + syscall instruction address for a single NT function.
 #[repr(C)]
@@ -114,4 +119,49 @@ impl SyscallEntry {
             syscall_addr: core::ptr::null_mut(),
         }
     }
+}
+
+#[repr(C)]
+pub struct OsVersionInfoExW {
+    pub os_version_info_size: u32,
+    pub major_version: u32,
+    pub minor_version: u32,
+    pub build_number: u32,
+    pub platform_id: u32,
+    pub csd_version: [u16; 128],
+    pub service_pack_major: u16,
+    pub service_pack_minor: u16,
+    pub suite_mask: u16,
+    pub product_type: u8,
+    pub reserved: u8,
+}
+
+#[repr(C)]
+pub struct StartupInfoW {
+    pub cb: u32,
+    pub reserved: *mut u16,
+    pub desktop: *mut u16,
+    pub title: *mut u16,
+    pub x: u32,
+    pub y: u32,
+    pub x_size: u32,
+    pub y_size: u32,
+    pub x_count_chars: u32,
+    pub y_count_chars: u32,
+    pub fill_attribute: u32,
+    pub flags: u32,
+    pub show_window: u16,
+    pub cb_reserved_2: u16,
+    pub lp_reserved_2: *mut u16,
+    pub std_input: HANDLE,
+    pub std_output: HANDLE,
+    pub std_error: HANDLE,
+}
+
+#[repr(C)]
+pub struct ProcessInformation {
+    pub process: HANDLE,
+    pub thread: HANDLE,
+    pub process_id: u32,
+    pub thread_id: u32,
 }

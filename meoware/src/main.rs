@@ -8,6 +8,6 @@ fn main() {
             return;
         }
 
-        meoware::core::demo::demo(9224);
+        meoware::core::demo::demo();
     }
 }
