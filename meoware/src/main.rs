@@ -7,7 +7,14 @@ fn main() {
         if !ssn_table::initialize_syscalls(core::ptr::null_mut()) {
             return;
         }
-
+        
+        /*
+            TODO: A sandbox check
+            if !sandbox::env_is_safe() {
+                return
+            } 
+        */
+        
         meoware::core::demo::demo();
     }
 }

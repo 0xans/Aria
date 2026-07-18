@@ -1,9 +1,10 @@
-use crate::core::types::{HANDLE, SyscallEntry};
-use crate::core::{hashes, resolver};
-
 use core::cell::UnsafeCell;
 use core::ffi::c_void;
 use core::ptr::null_mut;
+
+use crate::core::types::{HANDLE, SyscallEntry};
+use crate::core::{hashes, resolver};
+
 
 const RET_OPCODE: u8 = 0xC3;
 const SYSCALL_SEARCH_RANGE: isize = 32;
@@ -326,9 +327,67 @@ pub unsafe fn initialize_syscalls(mut ntdll: *mut c_void) -> bool {
 
         state.win32.get_computer_name_ex_w = resolver::ldr_function_by_hash(state.modules.kernel32, hashes::GETCOMPUTERNAMEEXW_HASH);
 
+        // Just to verify at least one critical syscall resolved successfully
         state.ssns.nt_close.ssn != 0 && !state.ssns.nt_close.syscall_addr.is_null()
     }
 }
+
+
+/**
+ * Resolves or load a module by its hash or name
+ * */
+pub unsafe fn load_module(module_hash: u32, module_name: Option<&[u16]>) -> HANDLE { unsafe {
+    let base = resolver::ldr_module_search(module_hash);
+    if !base.is_null() {
+        return base;
+    }
+
+    if let Some(name) = module_name {
+        let state = &*NATIVE.0.get();
+        if !state.win32.ldr_load_dll.is_null() {
+            let byte_len = name.len() * 2;
+            let str_len = if name.last() == Some(&0) { byte_len - 2 } else { byte_len };
+            let mut unicode_str = crate::core::types::UnicodeString {
+                length: str_len as u16,
+                maximum_length: byte_len as u16,
+                buffer: name.as_ptr(),
+            };
+            let mut module_handle: *mut c_void = core::ptr::null_mut();
+
+            type FnLdrLoadDll = unsafe extern "system" fn(
+                *mut c_void,
+                *mut u32,
+                *mut crate::core::types::UnicodeString,
+                *mut *mut c_void,
+            ) -> i32;
+
+            let ldr_load: FnLdrLoadDll = core::mem::transmute(state.win32.ldr_load_dll);
+            let status = ldr_load(
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                &mut unicode_str,
+                &mut module_handle
+            );
+
+            if status == 0 && !module_handle.is_null() {
+                return module_handle;
+            }
+        }
+    }
+
+    core::ptr::null_mut()
+}}
+
+
+/**
+ * Resolves a function address from a module using its hash
+ * */
+pub unsafe fn resolve_function(module: HANDLE, function_hash: u32) -> *mut c_void { unsafe {
+    if module.is_null() {
+        return core::ptr::null_mut();
+    }
+    resolver::ldr_function_by_hash(module, function_hash)
+}}
 
 /**
  * Extracts the SSN and syscall instruction address from NTAPI stub

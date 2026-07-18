@@ -73,6 +73,10 @@ pub const GETCOMPUTERNAMEEXW_HASH: u32 = 0x51d5275a;
 /* advapi32 */
 pub const GETUSERNAMEW_HASH: u32 = 0x7713f3ef;
 
+/* user32.dll */
+pub const USER32_DLL_HASH: u32 = 0xb8013784;
+pub const ENUMDISPLAYSETTINGSW_HASH: u32 = 0xa497d4eb;
+
 /* WinHTTP */
 pub const WINHTTPOPEN_HASH: u32 = 0xc4447d36;
 pub const WINHTTPCONNECT_HASH: u32 = 0xfa6b556e;
