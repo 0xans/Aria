@@ -165,3 +165,97 @@ pub struct ProcessInformation {
     pub process_id: u32,
     pub thread_id: u32,
 }
+
+/**
+ * Debug register offsets in CONTEXT (x64):
+ *  Dr0 = offset 0x048 (breakpoint 0 address)
+ *  Dr1 = offset 0x050
+ *  Dr2 = offset 0x058
+ *  Dr3 = offset 0x060
+ *  Dr6 = offset 0x068 (debug status)
+ *  Dr7 = offset 0x070 (debug control) 
+ * */
+#[repr(C, align(16))]
+pub struct Context64 {
+    pub data: [u8; 1232], // Full context, we address fields by known offsets
+}
+
+impl Context64 {
+    pub const fn zeroed() -> Self {
+        Self { data: [0u8; 1232] }
+    }
+
+    pub fn set_flags(&mut self, flags: u32) {
+        let bytes = flags.to_le_bytes();
+        self.data[0x30..0x34].copy_from_slice(&bytes);
+    }
+
+    pub fn flags(&self) -> u32 {
+        u32::from_le_bytes([self.data[0x30], self.data[0x31], self.data[0x32], self.data[0x33]])
+    }
+
+    // DR0 at offset 0x048
+    pub fn set_dr0(&mut self, val: u64) {
+        self.data[0x48..0x50].copy_from_slice(&val.to_le_bytes());
+    }
+    pub fn dr0(&self) -> u64 {
+        u64::from_le_bytes(self.data[0x48..0x50].try_into().unwrap())
+    }
+
+    // DR7 at offset 0x070
+    pub fn set_dr7(&mut self, val: u64) {
+        self.data[0x70..0x78].copy_from_slice(&val.to_le_bytes());
+    }
+    pub fn dr7(&self) -> u64 {
+        u64::from_le_bytes(self.data[0x70..0x78].try_into().unwrap())
+    }   
+
+    // RIP at offset 0x0F8
+    pub fn set_rip(&mut self, val: u64) {
+        self.data[0xF8..0x100].copy_from_slice(&val.to_le_bytes());
+    }
+    pub fn rip(&self) -> u64 {
+        u64::from_le_bytes(self.data[0xF8..0x100].try_into().unwrap())
+    }
+
+    // RAX at offset 0x078
+    pub fn set_rax(&mut self, val: u64) {
+        self.data[0x78..0x80].copy_from_slice(&val.to_le_bytes());
+    }
+
+    // RSP at offset 0x098
+    pub fn set_rsp(&mut self, val: u64) {
+        self.data[0x098..0xA0].copy_from_slice(&val.to_le_bytes());
+    }
+    pub fn rsp(&self) -> u64 {
+        u64::from_le_bytes(self.data[0x98..0xA0].try_into().unwrap())
+    }
+}
+
+// Context flags for NtGetContextThread/NtSetContextThread
+pub const CONTEXT_DEBUG_REGISTERS: u32 = 0x00100010; // CONTEXT_AMD64 | DEBUG_REGISTERS
+pub const CONTEXT_ALL: u32 = 0x0010001F; // CONTEXT_AMD64
+
+
+#[repr(C)]
+pub struct ExceptionRecord {
+    pub exception_code: u32,
+    pub exception_flags: u32,
+    pub exception_record: *mut ExceptionRecord,
+    pub exception_address: *mut core::ffi::c_void,
+    pub number_parameters: u32,
+    pub exception_information: [usize; 15], // EXCEPTION_MAXIMUM_PARAMETERS
+}
+
+#[repr(C)]
+pub struct ExceptionPointers {
+    pub exception_record: *mut ExceptionRecord,
+    pub context_record: *mut Context64,
+}
+
+// Exception record for VEH
+pub const STATUS_SINGLE_STEP: u32 = 0x80000004;
+
+// VEH return codes
+pub const EXCEPTION_CONTINUE_EXECUTION: i32 = -1;
+pub const EXCEPTION_CONTINUE_SEARCH: i32 = 0;

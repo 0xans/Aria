@@ -555,3 +555,31 @@ pub unsafe fn nt_unmap_view_of_section(
         )
     }
 }
+
+pub unsafe fn nt_get_context_thread(
+    thread_handle: HANDLE,
+    context: *mut Context64,
+) -> NTSTATUS { unsafe {
+    let table = ssn_table::syscall_table();
+    let e = &table.ssns.nt_get_context_thread;
+    invoke::syscall2(
+        e.ssn,
+        e.syscall_addr as usize,
+        thread_handle as usize,
+        context as usize,
+    )
+}}
+
+pub unsafe fn nt_set_context_thread(
+    thread_handle: HANDLE,
+    context: *mut Context64,
+) -> NTSTATUS { unsafe {
+    let table = ssn_table::syscall_table();
+    let e = &table.ssns.nt_set_context_thread;
+    invoke::syscall2(
+        e.ssn,
+        e.syscall_addr as usize,
+        thread_handle as usize,
+        context as usize,
+    )
+}}

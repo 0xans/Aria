@@ -7,3 +7,5 @@ pub mod ssn_table;
 pub mod types;
 pub mod win32;
 pub mod sandbox;
+pub mod etw;
+pub mod amsi;

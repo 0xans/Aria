@@ -11,6 +11,8 @@ pub const NTDLL_HASH: u32 = 0x59ac125e;
 pub const KERNEL32_HASH: u32 = 0xab506c86;
 pub const WINHTTP_DLL_HASH: u32 = 0xc428144e;
 pub const ADVAPI32_DLL_HASH: u32 = 0x5c33f17a;
+pub const AMSI_DLL_HASH: u32 = 0x4acf0cea;
+pub const USER32_DLL_HASH: u32 = 0xb8013784;
 
 /* ntdll - Nt* syscalls */
 pub const NTOPENPROCESS_HASH: u32 = 0x8088b60b;
@@ -66,6 +68,14 @@ pub const TPALLOCWORK_HASH: u32 = 0xe5df5e68;
 pub const TPPOSTWORK_HASH: u32 = 0x279ffb85;
 pub const TPRELEASEWORK_HASH: u32 = 0xaca04e5e;
 
+/* ntdll - ETW */
+pub const ETWEVENTWRITE_HASH: u32 = 0x93ecb2f5;
+pub const ETWEVENTWRITEFULL_HASH: u32 = 0x296ab186;
+pub const NTTRACEEVENT_HASH: u32 = 0xfb30d56b;
+
+/* amsi.dll */
+pub const AMSISCANBUFFER_HASH: u32 = 0x21366c81;
+
 /* kernel32 */
 pub const CREATEPROCESSW_HASH: u32 = 0x603dac20;
 pub const GETCOMPUTERNAMEEXW_HASH: u32 = 0x51d5275a;
@@ -74,7 +84,6 @@ pub const GETCOMPUTERNAMEEXW_HASH: u32 = 0x51d5275a;
 pub const GETUSERNAMEW_HASH: u32 = 0x7713f3ef;
 
 /* user32.dll */
-pub const USER32_DLL_HASH: u32 = 0xb8013784;
 pub const ENUMDISPLAYSETTINGSW_HASH: u32 = 0xa497d4eb;
 
 /* WinHTTP */
