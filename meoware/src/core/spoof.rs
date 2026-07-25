@@ -139,3 +139,10 @@ unsafe fn scan_module_for_gadgets(module_base: HANDLE, gadgets: &mut [*mut c_voi
 
     count
 }
+
+/**
+ * Returns a reference to the resolved gadgets
+ * */
+pub unsafe fn spoof_gadgets() -> &'static SpoofGadgets {
+    &*GADGETS.0.get()
+} 
