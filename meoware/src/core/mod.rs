@@ -9,3 +9,4 @@ pub mod win32;
 pub mod sandbox;
 pub mod etw;
 pub mod amsi;
+pub mod spoof;
