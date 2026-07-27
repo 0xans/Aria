@@ -1,3 +1,9 @@
+/**
+ * PE .pdata parser - RUNTIME_FUNCTION / UNWIND_INFO lookup
+ * This is used by the dynamic call spoofer to find valid return sites within legitimate DLLs (ntdll, kernel32.dll, kernelbase.dll)
+ * For each stack spoofing to survive RtlVirtualUnwind validation, each spoofed return address must fall within a function that has a valid RUNTIME_FUNCTION entry in the module .pdata section 
+ * */
+
 use crate::core::types::*;
 
 /**
@@ -9,6 +15,9 @@ pub struct ReturnSite {
     pub frame_size: u32, // Size of the stack frame (from UNWIND_INFO), this is used to build a correct RSP
 }
 
+/**
+ * Find valid return sites within a module .text section that have RUNTIME_FUNCTION coverage in .pdata
+ * */
 pub unsafe fn find_return_sites(module_base: HANDLE, max_sites: usize) -> ([ReturnSite; 16], usize) {
     let mut sites = [ReturnSite { address: 0, frame_size: 0}; 16];
     let mut count = 0usize;
