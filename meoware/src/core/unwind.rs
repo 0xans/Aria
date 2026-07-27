@@ -36,7 +36,7 @@ pub unsafe fn find_return_sites(module_base: HANDLE, max_sites: usize) -> ([Retu
 
     let opt_hdr = nt_hdr.add(24);
     let magic = *(opt_hdr as *const u16);
-    if magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC {
+    if magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC {
         return (sites, 0);
     }
 
