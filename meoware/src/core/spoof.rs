@@ -122,7 +122,6 @@ unsafe fn scan_module_for_gadgets(module_base: HANDLE, gadgets: &mut [*mut c_voi
 
     for i in 0..number_of_sections {
         let section = first_section.add(i * 40);
-        let _name = first_section.add(i * 40);
         let name = core::slice::from_raw_parts(section, 8);
         if name[0] == b'.' && name[1] == b't' && name[2] == b'e' && name[3] == b'x' && name[4] == b't' {
             text_rva = *(section.add(12) as *const u32) as usize;
