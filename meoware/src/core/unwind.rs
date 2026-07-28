@@ -18,7 +18,7 @@ pub struct ReturnSite {
 /**
  * Find valid return sites within a module .text section that have RUNTIME_FUNCTION coverage in .pdata
  * */
-pub unsafe fn find_return_sites(module_base: HANDLE, max_sites: usize) -> ([ReturnSite; 16], usize) {
+pub unsafe fn find_return_sites(module_base: HANDLE, max_sites: usize) -> ([ReturnSite; 16], usize) { unsafe {
     let mut sites = [ReturnSite { address: 0, frame_size: 0}; 16];
     let mut count = 0usize;
     let max = if max_sites > 16 { 16 } else { max_sites };
@@ -75,7 +75,7 @@ pub unsafe fn find_return_sites(module_base: HANDLE, max_sites: usize) -> ([Retu
         // We skip the very small functions (16 byte) because they are not useful for us
         let func_size = end_rva.saturating_sub(begin_rva);
         if func_size < 16 || unwind_rva == 0 {
-            idx + step;
+            idx += step;
             continue;
         }
 
@@ -108,13 +108,13 @@ pub unsafe fn find_return_sites(module_base: HANDLE, max_sites: usize) -> ([Retu
     } 
 
     (sites, count)
-}
+}}
 
 /**
  * Calculate approximate stack frame size from UNWINE_INFO.
  * We sum up stack allocations from UWOP_ALLOC_SMALL and UWOP_ALLOC_LARGE.
  * */
-unsafe fn calculate_frame_size(unwind_info: *const u8) -> u32 {
+unsafe fn calculate_frame_size(unwind_info: *const u8) -> u32 { unsafe {
     let count_of_codes = *unwind_info.add(2) as usize;
     let codes_start = unwind_info.add(4);
 
@@ -167,4 +167,4 @@ unsafe fn calculate_frame_size(unwind_info: *const u8) -> u32 {
 
     // Add 8 for the return address itself
     total_alloc + 8
-}
+}}

