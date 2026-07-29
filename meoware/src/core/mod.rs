@@ -11,3 +11,4 @@ pub mod etw;
 pub mod amsi;
 pub mod spoof;
 pub mod unwind;
+pub mod anti_debug;

