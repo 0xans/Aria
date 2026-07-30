@@ -19,6 +19,15 @@ mod arch {
     pub const STUB_SIZE: u32 = 0x12;
 }
 
+#[cfg(target_arch = "x86")]
+mod arch {
+    pub const MOV_EAX: [u8; 1] = [0xB8];
+    pub const SSN_LOW_OFFSET: isize = 1;
+    pub const SSN_HIGH_OFFSET: isize = 2;
+    pub const SYSCALL_OPCODE: u16 = 0x050F;
+    pub const STUB_SIZE: u32 = 0x0E;
+}
+
 /**
  * Struct to hold SSN + syscall addresses per funcion
  * Each entry store both SSN and the address of the syscall;ret gadget from that function's
@@ -196,6 +205,14 @@ pub unsafe fn initialize_syscalls(mut ntdll: *mut c_void) -> bool {
             }
         }
         state.modules.ntdll = ntdll;
+
+        #[cfg(target_arch = "x86")]
+        {
+            if is_wow() {
+                let teb_ptr: u32;
+                core::arch::asm!("mov {}, fs:[0xC0]", out(reg) teb_ptr)
+            }
+        }
 
         // Per function SSN + syscall address resolution macro
         macro_rules! resolve_ssn {
@@ -498,6 +515,37 @@ unsafe fn extract_syscall_info(
                 }
             }
 
+            #[cfg(target_arch = "x86")]
+            {
+                if *(function as *const u8).offset(offset) == arch::MOV_EAX[0] {
+                    if let Some(ssn_val) = ssn.as_deref_mut() {
+                        let low = *(function as *const u8).offset(offset + arch::SSN_LOW_OFFSET);
+                        let high = *(function as *const u8).offset(offset + arch::SSN_HIGH_OFFSET);
+                        *ssn_val = (high as u16) << 8 | low as u16;
+                        success = true;
+                    }
+                    if let Some(addr_out) = syscall_address {
+                        if is_wow64() {
+                            let teb_ptr: u32;
+                            core::arch::asm!("mov {}, fs:[0xC0]", out(reg) teb_ptr);
+                            *addr_out = teb_ptr as *mut c_void;
+                            success = true;
+                        } else {
+                            *addr_out = core::ptr::null_mut();
+                            for i in 0..SYSCALL_SEARCH_RANGE {
+                                let candidate = (function as *const u16).offset(offset + i);
+                                if *candidate == arch::SYSCALL_OPCODE {
+                                    *addr_out = candidate as *mut c_void;
+                                    success = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+
             offset += 1;
         }
 
@@ -539,6 +587,17 @@ unsafe fn find_hooked_syscall_ssn(function: *mut c_void, ssn: &mut u16) -> bool 
         false
     }
 }
+
+/**
+ * Check if current process is running under WOW64
+ * */
+#[cfg(target_arch = "x86")]
+unsafe fn is_wow64() -> bool {
+    let teb_value: u32;
+    core::arch::asm!("mov {}, fs:[0xC0]", out(reg) teb_value);
+    teb_value != 0
+}
+
 
 /**
  * Returns a reference to the initialized syscall table
