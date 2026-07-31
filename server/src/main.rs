@@ -76,7 +76,7 @@ async fn main() {
         .route("/api/result", post(handle_result))
         .with_state(state.clone());
     
-    let addr = SocketAddr::from(([0, 0, 0, 0,], port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
     println!("\n[*]    Listening on {}", format!("http://0.0.0.0:{}", port));
     println!("[*]    Secret {}\n", secret);

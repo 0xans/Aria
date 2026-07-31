@@ -6,6 +6,12 @@
 pub const HASH_SEED: u32 = 0x4E67C6A7;
 pub const HASH_XOR: u32 = 0x2B8E4F91;
 
+/* Target process hashes */
+pub const EXPLORER_EXE_HASH: u32 = 0xfa1b7ab9;
+pub const TASKHOSTW_EXE_HASH: u32 = 0x37bd682e;
+pub const RUNTIMEBROKER_EXE_HASH: u32 = 0x194fe651;
+pub const SIHOST_EXE_HASH: u32 = 0x5de77ce0;
+
 /* Module hashes */
 pub const NTDLL_HASH: u32 = 0x59ac125e;
 pub const KERNEL32_HASH: u32 = 0xab506c86;
