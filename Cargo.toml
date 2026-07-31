@@ -1,5 +1,5 @@
 [workspace]
-members = ["meoware"]
+members = ["meoware", "server"]
 resolver = "2"
 
 [workspace.package]

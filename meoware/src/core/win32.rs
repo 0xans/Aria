@@ -10,7 +10,7 @@ pub unsafe fn rtl_init_unicode_string(
     if table.win32.rtl_init_unicode_string.is_null() {
         return;
     }
-
+    
     type FnRtlInitUnicodeString = unsafe extern "system" fn(*mut UnicodeString, *const u16);
     let func: FnRtlInitUnicodeString = core::mem::transmute(table.win32.rtl_init_unicode_string);
     func(destinations_string, source_string);
