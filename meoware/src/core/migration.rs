@@ -86,7 +86,7 @@ unsafe fn find_processes_by_hash(target_hahs: u32, required_session: u32) -> [us
         }
     }
 
-    // TODO: Walk the linked list of SYSTEM_PROCESS_INFOMRATION
+    // TODO: Walk the linked list of SYSTEM_PROCESS_INFORMATION
     unimplemented!()
 }
 
