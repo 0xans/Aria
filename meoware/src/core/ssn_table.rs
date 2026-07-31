@@ -350,7 +350,7 @@ pub unsafe fn initialize_syscalls(mut ntdll: *mut c_void) -> bool {
 }
 
 
-pub unsafe fn initialize_network() -> bool {
+pub unsafe fn initialize_network() -> bool { unsafe {
     let state = &mut *NATIVE.0.get();
 
     // Skip if already initialized
@@ -404,7 +404,7 @@ pub unsafe fn initialize_network() -> bool {
 
     // Verify crucial WinHTTP function resolved
     !state.win32.winhttp_open.is_null() && !state.win32.winhttp_connect.is_null() && !state.win32.winhttp_send_request.is_null()
-}
+}}
 
 /**
  * Resolves or load a module by its hash or name

