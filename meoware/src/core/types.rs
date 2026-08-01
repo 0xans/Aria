@@ -166,6 +166,26 @@ pub struct ProcessInformation {
     pub thread_id: u32,
 }
 
+#[repr(C)]
+pub struct SystemProcessInformation {
+    pub next_entry_offset: u32,
+    pub number_of_threads: u32,
+    pub working_set_private_size: i64,
+    pub hard_fault_count: u32,
+    pub number_of_threads_high_watermark: u32,
+    pub cycle_time: u64,
+    pub create_time: i64,
+    pub user_time: i64,
+    pub kernel_time: i64,
+    pub image_name: UnicodeString,
+    pub base_priority: i32,
+    pub _pad: u32,
+    pub unique_process_id: usize,
+    pub inherited_from_unique_process_id: usize,
+    pub handle_count: u32,
+    pub session_id: u32,
+}
+
 /**
  * Debug register offsets in CONTEXT (x64):
  *  Dr0 = offset 0x048 (breakpoint 0 address)
@@ -173,7 +193,7 @@ pub struct ProcessInformation {
  *  Dr2 = offset 0x058
  *  Dr3 = offset 0x060
  *  Dr6 = offset 0x068 (debug status)
- *  Dr7 = offset 0x070 (debug control) 
+ *  Dr7 = offset 0x070 (debug control)
  * */
 #[repr(C, align(16))]
 pub struct Context64 {
@@ -191,7 +211,12 @@ impl Context64 {
     }
 
     pub fn flags(&self) -> u32 {
-        u32::from_le_bytes([self.data[0x30], self.data[0x31], self.data[0x32], self.data[0x33]])
+        u32::from_le_bytes([
+            self.data[0x30],
+            self.data[0x31],
+            self.data[0x32],
+            self.data[0x33],
+        ])
     }
 
     // DR0 at offset 0x048
@@ -208,7 +233,7 @@ impl Context64 {
     }
     pub fn dr7(&self) -> u64 {
         u64::from_le_bytes(self.data[0x70..0x78].try_into().unwrap())
-    }   
+    }
 
     // RIP at offset 0x0F8
     pub fn set_rip(&mut self, val: u64) {
@@ -235,7 +260,6 @@ impl Context64 {
 // Context flags for NtGetContextThread/NtSetContextThread
 pub const CONTEXT_DEBUG_REGISTERS: u32 = 0x00100010; // CONTEXT_AMD64 | DEBUG_REGISTERS
 pub const CONTEXT_ALL: u32 = 0x0010001F; // CONTEXT_AMD64
-
 
 #[repr(C)]
 pub struct ExceptionRecord {

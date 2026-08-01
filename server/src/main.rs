@@ -1,6 +1,6 @@
-use std::{env::args, net::SocketAddr};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::{env::args, net::SocketAddr};
 
 use aes_gcm::Aes256Gcm;
 use axum::{Router, routing::post};
@@ -40,7 +40,7 @@ struct CommandData {
     #[serde(rename = "type")]
     command_type: String,
     args: Vec<String>,
-    timeout: Option<u64>
+    timeout: Option<u64>,
 }
 
 struct AppState {
@@ -60,9 +60,16 @@ async fn handle_result() {
 
 #[tokio::main]
 async fn main() {
-    let port: u16 = args().position(|a| a == "--port").and_then(|i| args().nth(i + 1)).and_then(|s| s.parse().ok()).unwrap_or(1337);
-    let secret = args().position(|a| a == "--secret").and_then(|i| args().nth(i + 1)).unwrap_or_else(|| "super-secret-key".to_string());
-    
+    let port: u16 = args()
+        .position(|a| a == "--port")
+        .and_then(|i| args().nth(i + 1))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1337);
+    let secret = args()
+        .position(|a| a == "--secret")
+        .and_then(|i| args().nth(i + 1))
+        .unwrap_or_else(|| "super-secret-key".to_string());
+
     let state = Arc::new(AppState {
         crypto: Crypto::new(&secret),
         sessions: RwLock::new(HashMap::new()),
@@ -70,20 +77,24 @@ async fn main() {
         results: RwLock::new(Vec::new()),
     });
 
-
     let app = Router::new()
         .route("/api/beacon", post(handle_beacon))
         .route("/api/result", post(handle_result))
         .with_state(state.clone());
-    
+
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
-    println!("\n[*]    Listening on {}", format!("http://0.0.0.0:{}", port));
+    println!(
+        "\n[*]    Listening on {}",
+        format!("http://0.0.0.0:{}", port)
+    );
     println!("[*]    Secret {}\n", secret);
 
     tokio::spawn(async move {
         let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-        axum::serve(listener, app.into_make_service()).await.unwrap();
+        axum::serve(listener, app.into_make_service())
+            .await
+            .unwrap();
     });
 
     unimplemented!()
