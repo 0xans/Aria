@@ -27,9 +27,10 @@ pub struct SpoofGadgets {
     pub count_ntdll: usize,                          // Number of valid ntdll return sites
     pub count_kernel32: usize,                       // Number of valid kernel32 sites
     pub initialized: bool,
-    // .pdata validated return sites in ntdll and kernel32 with frame size info
+    // .pdata validated return sites in ntdll with frame size info
     ntdll_sites: [unwind::ReturnSite; 16],
     ntdll_site_count: usize,
+    // .pdata validated return sites in kernel32 with frame size info
     kernel32_sites: [unwind::ReturnSite; 16],
     kernel32_site_count: usize,
 }
@@ -207,7 +208,7 @@ pub unsafe fn call_with_spoofed_stack(function: *mut c_void, args: &[usize]) -> 
             return call_direct(function, args);
         }
 
-        // Chose return sites. prefer .pdata-validated sites when available or fall back to legacy gadgets
+        // Chose return sites - prefer .pdata-validated sites when available or fall back to legacy gadgets
         static CALL_COUNTER: core::sync::atomic::AtomicUsize =
             core::sync::atomic::AtomicUsize::new(0);
         let counter = CALL_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);

