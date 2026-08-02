@@ -104,6 +104,11 @@ pub struct IoStatusBlock {
     pub information: usize,
 }
 
+#[repr(C)]
+pub struct FileDispositionInformation {
+    pub delete_file: u8,
+}
+
 // Struct to hold SSN + syscall instruction address for a single NT function.
 #[repr(C)]
 #[derive(Clone, Copy)]
