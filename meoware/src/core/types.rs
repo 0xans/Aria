@@ -172,6 +172,16 @@ pub struct ProcessInformation {
 }
 
 #[repr(C)]
+pub struct ProcessBasicInformation {
+    pub exit_status: NTSTATUS,
+    pub peb_base_address: *mut core::ffi::c_void,
+    pub affinity_mask: usize,
+    pub base_priority: i32,
+    pub unique_process_id: usize,
+    pub inherited_from_unique_process_id: usize,
+}
+
+#[repr(C)]
 pub struct SystemProcessInformation {
     pub next_entry_offset: u32,
     pub number_of_threads: u32,

