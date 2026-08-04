@@ -109,6 +109,42 @@ pub struct FileDispositionInformation {
     pub delete_file: u8,
 }
 
+#[repr(C)]
+pub struct Peb64 {
+    pub inherited_address_space: u8,
+    pub read_image_file_exec_options: u8,
+    pub being_debugged: u8,
+    pub _padding0: [u8; 5],
+    pub _reserved0: [usize; 2],
+    pub ldr: *mut core::ffi::c_void,
+    pub process_parameters: *mut core::ffi::c_void,
+}
+
+#[repr(C)]
+pub struct CurDir {
+    pub dos_path: UnicodeString,
+    pub handle: HANDLE,
+}
+
+#[repr(C)]
+pub struct RtlUserProcessParameters {
+    pub maximum_length: u32,
+    pub length: u32,
+    pub flags: u32,
+    pub debug_flags: u32,
+    pub console_handle: HANDLE,
+    pub console_flags: u32,
+    pub _pad0: u32, // padding before next HANDLE
+    pub standard_input: HANDLE,
+    pub standard_output: HANDLE,
+    pub standard_error: HANDLE,
+    pub current_directory: CurDir,
+    pub dll_path: UnicodeString,
+    pub image_path_name: UnicodeString,
+    pub command_line: UnicodeString,
+    pub environment: *mut core::ffi::c_void,
+}
+
 // Struct to hold SSN + syscall instruction address for a single NT function.
 #[repr(C)]
 #[derive(Clone, Copy)]
