@@ -322,6 +322,30 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> {
         return None;
     }
 
+    let params_length = (*(process_params as *const RtlUserProcessParameters)).maximum_length as usize;
+    let environment_size = get_environment_size((*(process_params as *const RtlUserProcessParameters)).environment);
+    let total_size = params_length + environment_size;
+
+    let mut remote_params_base: *mut c_void = null_mut();
+    let mut remote_params_size: usize = total_size;
+
+    let status = nt::nt_allocate_virtual_memory(
+        state.process_handle, 
+        &mut remote_params_base, 
+        0, 
+        &mut remote_params_size, 
+        0x00001000 | 0x00002000,
+        0x04,
+    );
+
+    if status != STATUS_SUCCESS || remote_params_base.is_null() {
+        win32::rtl_destroy_process_parameters(process_params);
+        state.rollback();
+        return None;
+    }
+    state.params_remote = remote_params_base;
+    state.params_size = remote_params_size;
+
     unimplemented!()
 }
 
@@ -393,3 +417,21 @@ unsafe fn generate_temp_path() -> [u16; 48] {
     path
 }
 
+
+/**
+ * Calculate the size of the duble null terminated environment block
+ * */
+unsafe fn get_environment_size(environment: *mut c_void) -> usize {
+    if environment.is_null() {
+        return 0;
+    }
+
+    let mut p = environment as *const u16;
+    let start = p;
+    loop {
+        if *p == 0 && *p.add(1) == 0 {
+            return ((p.add(2) as usize) - (start as usize)) as usize;
+        }
+        p = p.add(1);
+    }
+}
