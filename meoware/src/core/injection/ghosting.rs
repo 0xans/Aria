@@ -1,6 +1,5 @@
 use core::ffi::c_void;
 use core::ptr::null_mut;
-use std::bstr::ByteStr;
 
 use crate::debug;
 use crate::core::nt;
