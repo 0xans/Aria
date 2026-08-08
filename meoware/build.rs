@@ -13,7 +13,7 @@ fn main() {
     let pe_data = if let Ok(pe_path) = env::var("PAYLOAD_PE_PATH") {
         fs::read(&pe_path).unwrap_or_default()
     } else {
-        let crate_root = PathBuf::from(env::var("CARGO_MAINFEST_DIR").unwrap());
+        let crate_root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
         let dummy_path = crate_root.join("dummy.exe");
         if dummy_path.exists() {
             println!("cargo:rerun-if_changed={}", dummy_path.display());
