@@ -1,5 +1,5 @@
 pub mod ghosting;
-
+pub mod poolparty;
 
 use crate::debug;
 use crate::core::{amsi, etw, spoof, nt};
