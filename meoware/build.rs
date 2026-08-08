@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 fn main() {
-    let our_dir = env::var("OUR_DIR").unwrap();
+    let our_dir = env::var("OUT_DIR").unwrap();
     let out_path = PathBuf::from(&our_dir);
 
     let key = generate_build_key();
