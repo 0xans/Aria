@@ -334,3 +334,27 @@ pub const STATUS_SINGLE_STEP: u32 = 0x80000004;
 // VEH return codes
 pub const EXCEPTION_CONTINUE_EXECUTION: i32 = -1;
 pub const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
+
+
+#[repr(C)]
+pub struct ProcessHandleSnapshotInformation {
+    pub number_of_handles: usize,
+    pub reserved: usize,
+}
+
+#[repr(C)]
+pub struct TpDirect {
+    pub task_callbacks: *mut core::ffi::c_void,
+    pub task_numa_node: u32,
+    pub task_ideal_processor: u8,
+    pub task_padding: [u8; 3],
+    pub task_list_flink: *mut core::ffi::c_void, // LIST_ENTRY.Flink
+    pub task_list_blink: *mut core::ffi::c_void, // LIST_ENTRY.Blink
+    pub lock: u64,
+    pub io_list_flink: *mut core::ffi::c_void,  // IoCompletionInformationList.Flink
+    pub io_list_blink: *mut core::ffi::c_void,  // IoCompletionInformationList.Blink
+    pub callback: *mut core::ffi::c_void,       // offset 0x38 (actual callback)
+    pub numa_node: u32,
+    pub ideal_processor: u8,
+    pub _padding: [u8; 3],
+}

