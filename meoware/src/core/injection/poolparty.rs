@@ -1,12 +1,11 @@
 use core::ptr::null_mut;
 use core::ffi::c_void;
-use std::env::current_exe;
 
 use crate::core::types::*;
 use crate::core::nt;
 use crate::debug;
 
-pub unsafe fn migrate(shellcode: &[u8], process_handle: HANDLE, target_pid: usize) -> bool {
+pub unsafe fn migrate(shellcode: &[u8], process_handle: HANDLE, target_pid: usize) -> bool { unsafe {
     if shellcode.is_empty() || process_handle.is_null() || target_pid == 0 {
         return false;
     }
@@ -95,4 +94,4 @@ pub unsafe fn migrate(shellcode: &[u8], process_handle: HANDLE, target_pid: usiz
     // TODO: MirrorGate
 
     unimplemented!()
-}
+}}

