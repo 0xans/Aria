@@ -65,7 +65,7 @@ pub fn generate_reflective_shellcode(dll_bytes: &[u8], build_key: &[u8]) -> Vec<
 
 
 /**
- * PID Stub Generator
+ * PIC Stub Generator
  * */
 fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, usize)) {
     unimplemented!()
