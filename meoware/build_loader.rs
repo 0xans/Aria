@@ -119,13 +119,17 @@ fn pop_r(c: &mut Vec<u8>, reg: u8) {
     c.push(0x58 + (reg & 8));
 }
 
-fn mov_rr(c: &mut Vec<u8>, dest: u8, src: u8) {
-    unimplemented!()
+
+// mov r64, r64
+fn mov_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
+    emit_rex(c, true, src, dst);
+    c.push(0x89);
+    c.push(modrm(3, src, dst))
 }
 
 // sub r64, imm32
 fn sub_ri(c: &mut Vec<u8>, dst: u8, imm: i32) {
-    emit_rex(c, ture, 5, dst); // /5 = sub
+    emit_rex(c, true, 5, dst); // /5 = sub
     c.push(0x81);
     c.push(modrm(3, 5, dst));
     c.extend_from_slice(&imm.to_le_bytes());
