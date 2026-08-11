@@ -92,6 +92,7 @@ fn emit_rex(c: &mut Vec<u8>, w: bool, reg: u8, rm: u8) {
     if val != 0x40 || w { c.push(val) }
 }
 
+// Emit ModR/M + optional SIB + displacment for [base + disp]
 fn emit_modrm_mem(c: &mut Vec<u8>, reg: u8, base: u8, disp: i32) {
     if disp == 0 && (base & 7) != 5 { // mod=00 (means no disp), except rbp/r13
         c.push(modrm(0, reg, base));
@@ -118,7 +119,6 @@ fn pop_r(c: &mut Vec<u8>, reg: u8) {
     if reg >= 8 { c.push(0x41) }
     c.push(0x58 + (reg & 8));
 }
-
 
 // mov r64, r64
 fn mov_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
