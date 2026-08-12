@@ -378,5 +378,17 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     patch8(&mut c, js_hash_done);
 
     // TODO: Compare hash to GetProcAddress hash
+    cmp_ri32(&mut c, RDX, h_gpa);
+    pop_r(&mut c, RSI);                                 // restore module entry
+    pop_r(&mut c, RDI);                                 // restore names array
+    pop_r(&mut c, RCX);                                 // restore counter
+    let je_found_gpa = jcc32(&mut c, 0x84);             // je -> found GetProcAddress
+
+    // Not found, try previous name
+    test_rr32(&mut c, RCX, RCX);
+    let jnz_name_loop = jcc32(&mut c, 0x85);            // jnx -> try next name in the module
+
+    // Tested all nmaes in this module, fall to next module
+    // TODO: Advance to next entry 
     unimplemented!()        
 }
