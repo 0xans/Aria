@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{mem::offset_of, path::PathBuf, sync::poison};
 
 
 pub fn find_meoware_dll() -> Option<PathBuf> {
@@ -127,12 +127,166 @@ fn mov_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
     c.push(modrm(3, src, dst))
 }
 
+// mov r64, [base + disp]
+fn mov_rm64(c: &mut Vec<u8>, dst: u8, base: u8, disp: i32) {
+    emit_rex(c, true, dst, base);
+    c.push(0x8B);
+    emit_modrm_mem(c, dst, base, disp);
+}
+
+// mov r32, [base + disp] (32-bit load, zero extends to r64)
+fn mov_rm32(c: &mut Vec<u8>, dst: u8, base: u8, disp: i32) {
+    let need_rex = dst >= 8 || base >= 8;
+    if need_rex { emit_rex(c, false, dst, base) }
+    c.push(0x8B);
+    emit_modrm_mem(c, dst, base, disp);
+}
+
+
+fn mov_mr64(c: &mut Vec<u8>, base: u8, disp: i32, src: u8) {
+    let need_rex = src >= 8 || base >= 8;
+    if need_rex { emit_rex(c, false, src, base) }
+    c.push(0x89);
+    emit_modrm_mem(c, src, base, disp);
+}
+
+fn mov_ri32(c: &mut Vec<u8>, dst: u8, imm: u32) {
+    if dst >= 8 { c.push(0x41) } // REX.B
+    c.push(0xB8 + (dst & 7));
+    c.extend_from_slice(&imm.to_le_bytes());
+}
+
+fn movzx_rm8(c: &mut Vec<u8>, dst: u8, base: u8, disp: i32) {
+    let need_rex = dst >= 8 || base >= 8;
+    if need_rex { emit_rex(c, false, dst, base) }
+    c.push(0x0F);
+    c.push(0xB6);
+    emit_modrm_mem(c, dst, base, disp);
+}
+
+
+fn movzx_rm16(c: &mut Vec<u8>, dst: u8, base: u8, disp: i32) {
+    let need_rex = dst >= 8 || base >= 8;
+    if need_rex { emit_rex(c, false, dst, base) }
+    c.push(0x0F);
+    c.push(0xB7);
+    emit_modrm_mem(c, dst, base, disp);
+}
+
+fn inc_r(c: &mut Vec<u8>, reg: u8) {
+    emit_rex(c, true, 0, reg);
+    c.push(0xFF);
+    c.push(modrm(3, 0, reg));
+}
+
+fn dec_r32(c: &mut Vec<u8>, reg: u8) {
+    if reg >= 8 { emit_rex(c, false, 1, reg) }
+    c.push(0xFF);
+    c.push(modrm(3, 1, reg));
+}
+
+fn imul_rri8(c: &mut Vec<u8>, dst: u8, src: u8, imm: i8) {
+    let need_rex = dst >= 8 || src >= 8;
+    if need_rex { emit_rex(c, false, dst, src) }
+    c.push(0x6B);
+    c.push(modrm(3, dst, src));
+    c.push(imm as u8);
+}
+
+fn add_rr32(c: &mut Vec<u8>, dst: u8, src: u8) {
+    let need_rex = dst >= 8 || src >= 8;
+    if need_rex { emit_rex(c, false, dst, src) }
+    c.push(0x01);
+    c.push(modrm(3, src, dst))
+}
+
+fn add_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
+    emit_rex(c, true, src, dst);
+    c.push(0x01);
+    c.push(modrm(3, src, dst));
+}
+
+fn shl_ri8(c: &mut Vec<u8>, reg: u8, imm: u8) {
+    emit_rex(c, true, 4, reg); // /4 = shl
+    c.push(0xC1);
+    c.push(modrm(3, 4, reg));
+    c.push(imm);
+}
+
+fn test_rr(c: &mut Vec<u8>, a: u8, b: u8) {
+    emit_rex(c, true, b, a);
+    c.push(0x85);
+    c.push(modrm(3, b, a));
+}
+
+fn test_rr32(c: &mut Vec<u8>, a: u8, b: u8) {
+    let need_rex = a >= 8 || b >= 8;
+    if need_rex { emit_rex(c, false, b, a) }
+    c.push(0x85);
+    c.push(modrm(3, b, a));
+}
+
+fn test_al(c: &mut Vec<u8>) {
+    c.push(0x84);
+    c.push(0xC0);
+}
+
+
+fn cmp_ri32(c: &mut Vec<u8>, reg: u8, imm: u32) {
+    let need_rex = reg >= 8;
+    if need_rex { emit_rex(c, false, 7, reg) }
+    c.push(0x81);
+    c.push(modrm(3, 7, reg));
+    c.extend_from_slice(&imm.to_le_bytes());
+}
+
 // sub r64, imm32
 fn sub_ri(c: &mut Vec<u8>, dst: u8, imm: i32) {
     emit_rex(c, true, 5, dst); // /5 = sub
     c.push(0x81);
     c.push(modrm(3, 5, dst));
     c.extend_from_slice(&imm.to_le_bytes());
+}
+
+// ret
+fn ret(c: &mut Vec<u8>) {
+    c.push(0xC3);
+}
+
+// Jmp back to target address
+fn jmp_back(c: &mut Vec<u8>, target: usize) {
+    let offset8 = (target as i64) - (c.len() as i64 + 2);
+    if offset8 >= -128 && offset8 < 128 {
+        c.push(0xEB);
+        c.push(offset8 as i8 as u8);
+    } else {
+        let offset32 = (target as i32) - (c.len() as i32 + 5);
+        c.push(0xE9);
+        c.extend_from_slice(&offset32.to_le_bytes());
+    }
+}
+
+fn jcc32(c: &mut Vec<u8>, cc: u8) -> usize {
+    let pos = c.len();
+    c.push(0x0F);
+    c.push(cc);
+    c.extend_from_slice(&[0, 0, 0, 0]); // placeholder
+    pos
+}
+
+fn jcc8(c: &mut Vec<u8>, cc: u8) -> usize {
+    let pos = c.len();
+    c.push(cc);
+    c.push(0); // placeholder
+    pos
+}
+
+// Patch a rel8 jump target currnet position
+fn patch8(c: &mut Vec<u8>, pos: usize) {
+    let target = c.len();
+    let offset = (target as i32) - (pos as i32 + 2); // 1 oppcode + 1 disp
+    assert!(offset >= -128 && offset < 128, "rel8 out of range: {}", offset);
+    c[pos + 1] = offset as i8 as u8;
 }
 
 /**
@@ -142,8 +296,8 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     let mut c: Vec<u8> = Vec::with_capacity(2048);
 
     // PROLOGUE
-    c.extend_from_slice(&[0xE8, 0, 0, 0, 0]);               // call $+5
-    pop_r(&mut c, RBX);                                     // pop rbx = address of this insn (byte 5)
+    c.extend_from_slice(&[0xE8, 0, 0, 0, 0]);           // call $+5
+    pop_r(&mut c, RBX);                                 // pop rbx = address of this insn (byte 5)
 
     push_r(&mut c, RBP);
     mov_rr(&mut c, RBP, RSP);
@@ -155,7 +309,74 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     push_r(&mut c, RSI);
     push_r(&mut c, RDI);
 
-    // TODO: find kernel32 + GetProcAddress via PEB
+    // gs:[0x60] -> PEB -> Ldr -> InMemoryOrderModuleList
+    c.extend_from_slice(
+        &[0x65, 0x48, 0x8B, 0x04, 0x25, 0x60, 0, 0, 0]  // mov rax, gs[0x60]
+    );    
+    mov_rm64(&mut c, RAX, RAX, 0x18);                   // [PEB+0x18] = ldr 
+    mov_rm64(&mut c, RSI, RAX, 0x20);                   // rsi = InMemoryOrderModuleList.Flink (which is the first entry)
+    mov_mr64(&mut c, RBP, -0x48, RSI);                  // save the list head for the loop termination         
 
-    unimplemented!()
+    // Module loop to try each loaded DLL
+    let module_loop = c.len();
+
+    // Get DllBase for this entry
+    mov_rm64(&mut c, R12, RSI, 0x20);                   // r12 = DllBase
+    test_rr(&mut c, R12, R12);
+    let jz_skip_module = jcc32(&mut c, 0x84);           // skip if DllBase is NULL
+
+    // Check if this module has valid MZ header
+    movzx_rm16(&mut c, RAX, R12, 0);                    // ax = [base+0] (should be 0x5A4D)
+    cmp_ri32(&mut c, RAX, 0x5A4D);
+    let jne_skip_module = jcc32(&mut c, 0x85);          // skip if not MZ
+
+    // Parse PE: e_lfanew -> NT header -> export dir
+    mov_rm32(&mut c, RAX, R12, 0x3C);                   // eax = e_lfanew
+    add_rr(&mut c, RAX, R12);                           // rax = Nt headers 
+    mov_rm32(&mut c, RDX, RAX, 0x88);                   // edx = export dir RVA
+    test_rr32(&mut c, RDX, RDX);                        
+    let jz_skip_module2 = jcc32(&mut c, 0x84);          // Skip if no export dir
+
+    add_rr(&mut c, RDX, R12);                           // rdx = export dir VA
+    mov_mr64(&mut c, RBP, 0x040, RDX);                  // save export dir
+
+    // Read export dir fields
+    mov_rm32(&mut c, RCX, RDX, 0x18);                   // ecx = NumberOfNames
+    test_rr32(&mut c, RCX, RCX);
+    let js_skip_module3 = jcc32(&mut c, 0x84);          // skip if no names
+
+    mov_rm32(&mut c, RDI, RDX, 0x20);                   // edi = AddressOfNames RVA
+    add_rr(&mut c, RDI, R12);                           // rdi = AddressOfNames VA
+    mov_mr64(&mut c, RBP, -0x60, RDI);                  // save AddressOfNames VA
+
+    // hash each name and compare it to GetProcAddress hash
+    let name_loop = c.len();
+    dec_r32(&mut c, RCX);
+
+    //  name_ptr = moduel_base + AddressOfNames[eax]
+    mov_rr(&mut c, RAX, RCX);                           // rax = index
+    shl_ri8(&mut c, RAX, 2);                            // rax = index * 4
+    add_rr(&mut c, RAX, RDI);                           // rax = &AddressOfNames[index]
+    mov_rm32(&mut c, RAX, RAX, 0);                      // eax = AddressOfNames[index] RVA
+    add_rr(&mut c, RAX, R12);                           // rax = name string VA
+
+    // Hash export names iwht DJB2
+    push_r(&mut c, RCX);                                // save loop counter
+    push_r(&mut c, RDI);                                // save names array pointer
+    push_r(&mut c, RSI);                                // save module entry pointer
+    mov_rr(&mut c, R14, RAX);                           // r14 = name string (temp)
+    mov_ri32(&mut c, RCX, 5381);                        // edx = DJB2 seed
+
+    let hash_loop = c.len();
+    movzx_rm8(&mut c, RAX, R14, 0);                     // eax = *14 
+    test_al(&mut c);                                    // test al, al
+    let js_hash_done = jcc8(&mut c, 0x74);              // jz hash_done
+    imul_rri8(&mut c, RDX, RDX, 33);                    // edx *= 33
+    add_rr32(&mut c, RDX, RAX);                         // edx += char
+    inc_r(&mut c, R14);                                 // r14++
+    jmp_back(&mut c, hash_loop);
+    patch8(&mut c, js_hash_done);
+
+    // TODO: Compare hash to GetProcAddress hash
+    unimplemented!()        
 }
