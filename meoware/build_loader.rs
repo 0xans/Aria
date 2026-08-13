@@ -213,6 +213,13 @@ fn shl_ri8(c: &mut Vec<u8>, reg: u8, imm: u8) {
     c.push(imm);
 }
 
+// sub r64, r64
+fn sub_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
+    emit_rex(c, true, src, dst);
+    c.push(0x29);
+    c.push(modrm(3, src, dst));
+}
+
 fn test_rr(c: &mut Vec<u8>, a: u8, b: u8) {
     emit_rex(c, true, b, a);
     c.push(0x85);
@@ -281,6 +288,17 @@ fn jcc8(c: &mut Vec<u8>, cc: u8) -> usize {
     pos
 }
 
+// Patch a rel32 jump to target the current position
+fn patch32(c: &mut Vec<u8>, pos: usize) {
+    let target = c.len();
+    let offset = (target as i32) - (pos as i32 + 6); // 2 opcode + 4 disp
+    let bytes  = offset.to_le_bytes();
+    c[pos + 2] = bytes[0];
+    c[pos + 3] = bytes[1]; 
+    c[pos + 4] = bytes[2];
+    c[pos + 5] = bytes[3];
+}
+
 // Patch a rel8 jump target currnet position
 fn patch8(c: &mut Vec<u8>, pos: usize) {
     let target = c.len();
@@ -343,7 +361,7 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     // Read export dir fields
     mov_rm32(&mut c, RCX, RDX, 0x18);                   // ecx = NumberOfNames
     test_rr32(&mut c, RCX, RCX);
-    let js_skip_module3 = jcc32(&mut c, 0x84);          // skip if no names
+    let jz_skip_module3 = jcc32(&mut c, 0x84);          // skip if no names
 
     mov_rm32(&mut c, RDI, RDX, 0x20);                   // edi = AddressOfNames RVA
     add_rr(&mut c, RDI, R12);                           // rdi = AddressOfNames VA
@@ -389,6 +407,59 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     let jnz_name_loop = jcc32(&mut c, 0x85);            // jnx -> try next name in the module
 
     // Tested all nmaes in this module, fall to next module
-    // TODO: Advance to next entry 
+    // Advance to next entry 
+    let skip_module_label = c.len();
+    patch32(&mut c, jz_skip_module);
+    patch32(&mut c, jne_skip_module);
+    patch32(&mut c, jz_skip_module2);
+    patch32(&mut c, jz_skip_module3);
+    // Patch the name loop exhaustion to also come here
+    // (jnz_name_loop jumps back if NOT zero; when zero, falls through here)
+
+    mov_rm64(&mut c, RAX, RSI, 0);                      // rsi = [rsi].Flink -> next moduel entry
+    // check if we have wrapped arouned to the list head
+    mov_rm64(&mut c, RAX, RBP, -0x48);                  // rax = list head 
+    sub_rr(&mut c, RAX, RSI);                           // rax = head - current, 0 if wrapped
+    test_rr(&mut c, RAX, RAX);
+    let jnz_module_loop = jcc32(&mut c, 0x85);          // if not wrapped try next module
+    // Patch jnz to go back to module loop
+    let ml_off = (module_loop as i32) - (jnz_module_loop as i32 + 6);
+    c[jnz_module_loop + 2..jnz_module_loop + 6].copy_from_slice(&ml_off.to_le_bytes());
+
+    // Did not find GetProcAddress in all module so exit
+    let jmp_exit_1 = c.len();
+    c.push(0xE9);
+    c.extend_from_slice(&[0, 0, 0, 0]);                 // jmp exit (patch later)
+
+    // GetProcAddress found
+    let gpa_found_label = c.len();
+    patch32(&mut c, je_found_gpa);
+    // Patch jnz_name_loop to go back to name_loop
+    let nl_off = (name_loop as i32) - (jnz_name_loop as i32 + 6);
+    c[jnz_name_loop + 2..jnz_name_loop + 6].copy_from_slice(&nl_off.to_le_bytes());
+
+    // r12 = module base (the dll that has GetProcAddress which is kernel32)
+    // rcx = index of the matched name
+    // resolve function address: NameOrdinals[index] -> Functions[ordinal]
+    mov_rm64(&mut c, RDX, RBP, -0x40);                  // rdx = export dir     
+    mov_rm32(&mut c, RAX, RDX, 0x24);                   // eax = AddressOfNameOrdinals RVA
+    add_rr(&mut c, RAX, R12);
+    // ordinals = [rax + eax * 2]
+    mov_rr(&mut c, RDI, RCX);
+    shl_ri8(&mut c, RDI, 1);                            // rdi = index * 2
+    add_rr(&mut c, RAX, RDI);
+    movzx_rm16(&mut c, RAX, RAX, 0);                    // ax = ordinal
+
+    // Functions[ordinal]
+    mov_rm64(&mut c, RDX, RBP, -0x40);                  // read export dir again 
+    mov_rm32(&mut c, RDX, RDX, 0x1C);                   // edx = AddressOfFunctions RVA
+    add_rr(&mut c, RDX, R12);
+    shl_ri8(&mut c, RAX, 2);                            // ordinal * 4 
+    add_rr(&mut c, RAX, RDX);
+    mov_rm32(&mut c, RAX, RAX, 0);                      // eax = function RVA
+    add_rr(&mut c, RAX, R12);                           // rax = GetProcAddress absolute VA
+    mov_rr(&mut c, R13, RAX);                           // r13 = GetProcAddress
+
+    // TODO: Resolve APIs using GetProcAddress
     unimplemented!()        
 }
