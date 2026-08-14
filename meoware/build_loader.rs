@@ -157,7 +157,7 @@ fn mov_rm32(c: &mut Vec<u8>, dst: u8, base: u8, disp: i32) {
     emit_modrm_mem(c, dst, base, disp);
 }
 
-
+// mov [base + disp], r64
 fn mov_mr64(c: &mut Vec<u8>, base: u8, disp: i32, src: u8) {
     let need_rex = src >= 8 || base >= 8;
     if need_rex { emit_rex(c, false, src, base) }
@@ -165,12 +165,14 @@ fn mov_mr64(c: &mut Vec<u8>, base: u8, disp: i32, src: u8) {
     emit_modrm_mem(c, src, base, disp);
 }
 
+// mov r64, imm64
 fn mov_ri32(c: &mut Vec<u8>, dst: u8, imm: u32) {
     if dst >= 8 { c.push(0x41) } // REX.B
     c.push(0xB8 + (dst & 7));
     c.extend_from_slice(&imm.to_le_bytes());
 }
 
+// movzx r32, byte [base + disp]
 fn movzx_rm8(c: &mut Vec<u8>, dst: u8, base: u8, disp: i32) {
     let need_rex = dst >= 8 || base >= 8;
     if need_rex { emit_rex(c, false, dst, base) }
@@ -179,7 +181,7 @@ fn movzx_rm8(c: &mut Vec<u8>, dst: u8, base: u8, disp: i32) {
     emit_modrm_mem(c, dst, base, disp);
 }
 
-
+// movzx r32, word [base + disp]
 fn movzx_rm16(c: &mut Vec<u8>, dst: u8, base: u8, disp: i32) {
     let need_rex = dst >= 8 || base >= 8;
     if need_rex { emit_rex(c, false, dst, base) }
@@ -188,18 +190,21 @@ fn movzx_rm16(c: &mut Vec<u8>, dst: u8, base: u8, disp: i32) {
     emit_modrm_mem(c, dst, base, disp);
 }
 
+// inc r64
 fn inc_r(c: &mut Vec<u8>, reg: u8) {
     emit_rex(c, true, 0, reg);
     c.push(0xFF);
     c.push(modrm(3, 0, reg));
 }
 
+// dec r32
 fn dec_r32(c: &mut Vec<u8>, reg: u8) {
     if reg >= 8 { emit_rex(c, false, 1, reg) }
     c.push(0xFF);
     c.push(modrm(3, 1, reg));
 }
 
+// imul r32, r32, imm8
 fn imul_rri8(c: &mut Vec<u8>, dst: u8, src: u8, imm: i8) {
     let need_rex = dst >= 8 || src >= 8;
     if need_rex { emit_rex(c, false, dst, src) }
@@ -208,6 +213,7 @@ fn imul_rri8(c: &mut Vec<u8>, dst: u8, src: u8, imm: i8) {
     c.push(imm as u8);
 }
 
+// add r32, r32
 fn add_rr32(c: &mut Vec<u8>, dst: u8, src: u8) {
     let need_rex = dst >= 8 || src >= 8;
     if need_rex { emit_rex(c, false, dst, src) }
@@ -224,12 +230,14 @@ fn lea_rd(c: &mut Vec<u8>, dst: u8, base: u8, disp: i32) {
     c.extend_from_slice(&disp.to_le_bytes());
 }
 
+// add r64, r64
 fn add_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
     emit_rex(c, true, src, dst);
     c.push(0x01);
     c.push(modrm(3, src, dst));
 }
 
+// shl r64, imm8
 fn shl_ri8(c: &mut Vec<u8>, reg: u8, imm: u8) {
     emit_rex(c, true, 4, reg); // /4 = shl
     c.push(0xC1);
@@ -268,12 +276,14 @@ fn xor_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
     c.push(modrm(3, src, dst));
 }
 
+// test r64, r64
 fn test_rr(c: &mut Vec<u8>, a: u8, b: u8) {
     emit_rex(c, true, b, a);
     c.push(0x85);
     c.push(modrm(3, b, a));
 }
 
+// test r32, r32
 fn test_rr32(c: &mut Vec<u8>, a: u8, b: u8) {
     let need_rex = a >= 8 || b >= 8;
     if need_rex { emit_rex(c, false, b, a) }
@@ -281,12 +291,13 @@ fn test_rr32(c: &mut Vec<u8>, a: u8, b: u8) {
     c.push(modrm(3, b, a));
 }
 
+// test al, al
 fn test_al(c: &mut Vec<u8>) {
     c.push(0x84);
     c.push(0xC0);
 }
 
-
+// cmp r32, imm32
 fn cmp_ri32(c: &mut Vec<u8>, reg: u8, imm: u32) {
     let need_rex = reg >= 8;
     if need_rex { emit_rex(c, false, 7, reg) }
@@ -303,6 +314,7 @@ fn sub_ri(c: &mut Vec<u8>, dst: u8, imm: i32) {
     c.extend_from_slice(&imm.to_le_bytes());
 }
 
+// rep movsb
 fn rep_movsb(c: &mut Vec<u8>) {
     c.push(0xF3);
     c.push(0xA4);
@@ -326,6 +338,7 @@ fn jmp_back(c: &mut Vec<u8>, target: usize) {
     }
 }
 
+// Conditional jump rel32. returns patch position
 fn jcc32(c: &mut Vec<u8>, cc: u8) -> usize {
     let pos = c.len();
     c.push(0x0F);
@@ -334,6 +347,7 @@ fn jcc32(c: &mut Vec<u8>, cc: u8) -> usize {
     pos
 }
 
+// Conditional jump rel8. returns patch position
 fn jcc8(c: &mut Vec<u8>, cc: u8) -> usize {
     let pos = c.len();
     c.push(cc);
@@ -360,6 +374,10 @@ fn patch8(c: &mut Vec<u8>, pos: usize) {
     c[pos + 1] = offset as i8 as u8;
 }
 
+/**
+ * Sets up shadow space, calls, cleans up
+ * Emit: sub rsp, shadow; call reg; add rsp, shadow 
+ * - shadow must be >= 0x20 and 16 aligned - */
 fn emit_call_with_shadow(c: &mut Vec<u8>, func_reg: u8, shadow: i32) {
     sub_ri(c, RSP, shadow);
     call_r(c, func_reg);
