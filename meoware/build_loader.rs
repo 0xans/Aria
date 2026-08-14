@@ -530,5 +530,7 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
         patch32(&mut c, jz_fail); // TEMPORARY: patch to current pos
         // Ill fix this properly after the exit lable known
     }
+    
+    // TODO: Locate the payload and decrypt it
     unimplemented!()        
 }
