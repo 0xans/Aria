@@ -627,18 +627,18 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     // Parse PE and allocate image
 
     // rsi pionts to theend of encrypted data, but the decrypt buf is saved
-    mov_rm64(&mut c, RSI, RBP, -0x18);
+    mov_rm64(&mut c, RSI, RBP, -0x18);                  // rsi = decrypted DLL
 
     // Parse PE
-    mov_rm32(&mut c, RAX, RSI, 0x3C);
-    add_rr(&mut c, RAX, RSI);
-    mov_mr64(&mut c, RBP, -0x28, RAX);
+    mov_rm32(&mut c, RAX, RSI, 0x3C);                   // rax = e_lfanew
+    add_rr(&mut c, RAX, RSI);                           // rax = NT headers
+    mov_mr64(&mut c, RBP, -0x28, RAX);                  // save NT headers
 
     // SizeOfImage at [NT+0x50]
-    mov_rm32(&mut c, RDX, RAX, 0x50);
+    mov_rm32(&mut c, RDX, RAX, 0x50);                   // edx = SizeOfImage
 
     // VirtualAlloc(NULL, SizeOfImage, MEM_COMMIT| MEM_RESERVE, PAGE_READWRITE)
-    push_r(&mut c, RDX);
+    push_r(&mut c, RDX);                                // save SizeOfImage
     xor_rr(&mut c, RCX, RCX);
 
     // rdx already has SizeOfImage
@@ -646,25 +646,25 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     mov_ri32(&mut c, R9, 0x04);
     mov_rm64(&mut c, RAX, RBP, -0x08);
     emit_call_with_shadow(&mut c, RAX, 0x20);
-    pop_r(&mut c, RDX);
+    pop_r(&mut c, RDX);                                 // restore SizeOfImage
     test_rr(&mut c, RAX, RAX);
     let js_alloc2_fail = jcc32(&mut c, 0x84);
-    mov_rr(&mut c, R15, RAX);
+    mov_rr(&mut c, R15, RAX);                           // r15 = image base
 
     // Copy headers
-    mov_rm64(&mut c, RAX, RBP, -0x28);
-    mov_rm32(&mut c, RCX, RAX, 0x54);
-    mov_rr(&mut c, RDI, R15);
-    mov_rm64(&mut c, RSI, RBP, -0x18);
+    mov_rm64(&mut c, RAX, RBP, -0x28);                  // rax = NT header
+    mov_rm32(&mut c, RCX, RAX, 0x54);                   // ecx = SizeOfHeader
+    mov_rr(&mut c, RDI, R15);                           // dest = image base
+    mov_rm64(&mut c, RSI, RBP, -0x18);                  // src = raw DLL
     rep_movsb(&mut c);
 
     // Copy sections
-    mov_rm64(&mut c, RAX, RBP, -0x28);
-    movzx_rm16(&mut c, RCX, RAX, 0x06);
-    movzx_rm16(&mut c, RDX, RAX, 0x14);
+    mov_rm64(&mut c, RAX, RBP, -0x28);                  // NT header 
+    movzx_rm16(&mut c, RCX, RAX, 0x06);                 // cx = NumberOfSections
+    movzx_rm16(&mut c, RDX, RAX, 0x14);                 // dx = SizeOfOptionalHeader
     // Fist sectino header = NT 0x18 + SizeOfOptionalHeader
     lea_rd(&mut c, RSI, RAX, 0x18);
-    add_rr(&mut c, RSI, RDX);
+    add_rr(&mut c, RSI, RDX);                           // rsi = first section header
 
     let sec_loop = c.len();
     test_rr32(&mut c, RCX, RCX);
@@ -674,20 +674,20 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     push_r(&mut c, RSI);
 
     // SizeOfRawData at [section+0x10]
-    mov_rm32(&mut c, RCX, RSI, 0x10);
+    mov_rm32(&mut c, RCX, RSI, 0x10);                   // ecx = SizeOfRawData
     test_rr32(&mut c, RCX, RCX);
-    let jz_skip_sec = jcc32(&mut c, 0x74);
+    let jz_skip_sec = jcc32(&mut c, 0x74);              // jz skip
 
     // src = raw_dll + PointerToRawData
-    mov_rm32(&mut c, RAX, RSI, 0x14);
-    mov_rm64(&mut c, RSI, RBP, -0x18);
-    add_rr(&mut c, RSI, RAX);
+    mov_rm32(&mut c, RAX, RSI, 0x14);                   // eax = PointerToRawData
+    mov_rm64(&mut c, RSI, RBP, -0x18);                  // rsi = raw DLL
+    add_rr(&mut c, RSI, RAX);                           // src
 
     // dst = image_base + VirtualAddress
-    mov_rm64(&mut c, RAX, RSP, 0);
-    mov_rm64(&mut c, RAX, RAX, 0x0C);
+    mov_rm64(&mut c, RAX, RSP, 0);                      // load pushed rsi (session header) from stack
+    mov_rm64(&mut c, RAX, RAX, 0x0C);                   // rax = section header (from pushed rsi)
     mov_rr(&mut c, RDI, R15);
-    add_rr(&mut c, RDI, RAX);
+    add_rr(&mut c, RDI, RAX);                           // dst
 
     // eax still hold SizeOfRawData
     rep_movsb(&mut c);
@@ -695,7 +695,7 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     patch8(&mut c, jz_skip_sec);
 
     pop_r(&mut c, RSI);        
-    add_ri(&mut c, RSI, 0x28);
+    add_ri(&mut c, RSI, 0x28);                          // next section header (40 bytes)
     pop_r(&mut c, RCX);
     dec_r32(&mut c, RCX);
     jmp_back(&mut c, sec_loop);
