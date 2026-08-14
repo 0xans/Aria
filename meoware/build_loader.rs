@@ -303,6 +303,11 @@ fn sub_ri(c: &mut Vec<u8>, dst: u8, imm: i32) {
     c.extend_from_slice(&imm.to_le_bytes());
 }
 
+fn rep_movsb(c: &mut Vec<u8>) {
+    c.push(0xF3);
+    c.push(0xA4);
+}
+
 // ret
 fn ret(c: &mut Vec<u8>) {
     c.push(0xC3);
@@ -619,6 +624,83 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     jmp_back(&mut c, decrypt_loop);
     patch32(&mut c, jge_decrypt_done);
 
-    // TODO: Parse PE and allocate image
+    // Parse PE and allocate image
+
+    // rsi pionts to theend of encrypted data, but the decrypt buf is saved
+    mov_rm64(&mut c, RSI, RBP, -0x18);
+
+    // Parse PE
+    mov_rm32(&mut c, RAX, RSI, 0x3C);
+    add_rr(&mut c, RAX, RSI);
+    mov_mr64(&mut c, RBP, -0x28, RAX);
+
+    // SizeOfImage at [NT+0x50]
+    mov_rm32(&mut c, RDX, RAX, 0x50);
+
+    // VirtualAlloc(NULL, SizeOfImage, MEM_COMMIT| MEM_RESERVE, PAGE_READWRITE)
+    push_r(&mut c, RDX);
+    xor_rr(&mut c, RCX, RCX);
+
+    // rdx already has SizeOfImage
+    mov_ri32(&mut c, R8, 0x3000);
+    mov_ri32(&mut c, R9, 0x04);
+    mov_rm64(&mut c, RAX, RBP, -0x08);
+    emit_call_with_shadow(&mut c, RAX, 0x20);
+    pop_r(&mut c, RDX);
+    test_rr(&mut c, RAX, RAX);
+    let js_alloc2_fail = jcc32(&mut c, 0x84);
+    mov_rr(&mut c, R15, RAX);
+
+    // Copy headers
+    mov_rm64(&mut c, RAX, RBP, -0x28);
+    mov_rm32(&mut c, RCX, RAX, 0x54);
+    mov_rr(&mut c, RDI, R15);
+    mov_rm64(&mut c, RSI, RBP, -0x18);
+    rep_movsb(&mut c);
+
+    // Copy sections
+    mov_rm64(&mut c, RAX, RBP, -0x28);
+    movzx_rm16(&mut c, RCX, RAX, 0x06);
+    movzx_rm16(&mut c, RDX, RAX, 0x14);
+    // Fist sectino header = NT 0x18 + SizeOfOptionalHeader
+    lea_rd(&mut c, RSI, RAX, 0x18);
+    add_rr(&mut c, RSI, RDX);
+
+    let sec_loop = c.len();
+    test_rr32(&mut c, RCX, RCX);
+    let jz_sec_done = jcc32(&mut c, 0x84);
+
+    push_r(&mut c, RCX);
+    push_r(&mut c, RSI);
+
+    // SizeOfRawData at [section+0x10]
+    mov_rm32(&mut c, RCX, RSI, 0x10);
+    test_rr32(&mut c, RCX, RCX);
+    let jz_skip_sec = jcc32(&mut c, 0x74);
+
+    // src = raw_dll + PointerToRawData
+    mov_rm32(&mut c, RAX, RSI, 0x14);
+    mov_rm64(&mut c, RSI, RBP, -0x18);
+    add_rr(&mut c, RSI, RAX);
+
+    // dst = image_base + VirtualAddress
+    mov_rm64(&mut c, RAX, RSP, 0);
+    mov_rm64(&mut c, RAX, RAX, 0x0C);
+    mov_rr(&mut c, RDI, R15);
+    add_rr(&mut c, RDI, RAX);
+
+    // eax still hold SizeOfRawData
+    rep_movsb(&mut c);
+
+    patch8(&mut c, jz_skip_sec);
+
+    pop_r(&mut c, RSI);        
+    add_ri(&mut c, RSI, 0x28);
+    pop_r(&mut c, RCX);
+    dec_r32(&mut c, RCX);
+    jmp_back(&mut c, sec_loop);
+    patch32(&mut c, jz_sec_done);
+    
+    // TODO: Process relocations
     unimplemented!()        
 }
