@@ -120,6 +120,13 @@ fn pop_r(c: &mut Vec<u8>, reg: u8) {
     c.push(0x58 + (reg & 8));
 }
 
+// call r64
+fn call_r(c: &mut Vec<u8>, reg: u8) {
+    if reg >= 8 { c.push(0x41) }
+    c.push(0xFF);
+    c.push(modrm(3, 2, reg))
+}
+
 // mov r64, r64
 fn mov_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
     emit_rex(c, true, src, dst);
@@ -200,6 +207,15 @@ fn add_rr32(c: &mut Vec<u8>, dst: u8, src: u8) {
     c.push(modrm(3, src, dst))
 }
 
+// lea r64, [base + disp32]
+fn lea_rd(c: &mut Vec<u8>, dst: u8, base: u8, disp: i32) {
+    emit_rex(c, true, dst, base);
+    c.push(0x8D);
+    c.push(modrm(2, dst, base));
+    if (base & 7) == 4 { c.push(0x24) }
+    c.extend_from_slice(&disp.to_le_bytes());
+}
+
 fn add_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
     emit_rex(c, true, src, dst);
     c.push(0x01);
@@ -212,6 +228,14 @@ fn shl_ri8(c: &mut Vec<u8>, reg: u8, imm: u8) {
     c.push(modrm(3, 4, reg));
     c.push(imm);
 }
+
+// add r64, imm32
+fn add_ri(c: &mut Vec<u8>, dst: u8, imm: i32) {
+    emit_rex(c, true, 0, dst); // /0 = add
+    c.push(0x81);
+    c.push(modrm(3, 0, dst));
+    c.extend_from_slice(&imm.to_le_bytes());
+} 
 
 // sub r64, r64
 fn sub_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
@@ -305,6 +329,12 @@ fn patch8(c: &mut Vec<u8>, pos: usize) {
     let offset = (target as i32) - (pos as i32 + 2); // 1 oppcode + 1 disp
     assert!(offset >= -128 && offset < 128, "rel8 out of range: {}", offset);
     c[pos + 1] = offset as i8 as u8;
+}
+
+fn emit_call_with_shadow(c: &mut Vec<u8>, func_reg: u8, shadow: i32) {
+    sub_ri(c, RSP, shadow);
+    call_r(c, func_reg);
+    add_ri(c, RSP, shadow);
 }
 
 /**
@@ -460,6 +490,45 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     add_rr(&mut c, RAX, R12);                           // rax = GetProcAddress absolute VA
     mov_rr(&mut c, R13, RAX);                           // r13 = GetProcAddress
 
-    // TODO: Resolve APIs using GetProcAddress
+    // Resolve APIs using GetProcAddress
+    // r13 = GetProcAddress
+    // r12 = kernel32 base address
+    // Need: 
+    //      LoadLibraryA -> r14
+    //      VirtualAlloc -> [rbp-8]
+    //      VirtualProtect -> [rbp-0x10]
+
+    // String offsets will be patched after stub is complete
+    // For not, emit LEA rbx relative with placeholder offsets
+    let mut str_lea_patches: Vec<(usize, usize)> = Vec::new();
+
+    for (idx, (name, _)) in strings.iter().enumerate() {
+        // lea rdx, [pbx + str_offset]  (function name)
+        let lea_pos = c.len();
+        lea_rd(&mut c, RDX, RBX, 0);                    // placeholder disp32, will patch
+        str_lea_patches.push((lea_pos, idx));
+
+        // mov rcx, r12     (kernel32 = hModule)
+        mov_rr(&mut c, RCX, R12);
+
+        // call GetProcAddress with shadow space
+        emit_call_with_shadow(&mut c, R13, 0x20);
+
+        // save result
+        match *name {
+            "LoadLibraryA"   => mov_rr(&mut c, R14, RAX),
+            "VirtualAlloc"   => mov_mr64(&mut c, RBP, -0x08, RAX),
+            "VirtualProtect" => mov_mr64(&mut c, RBP, -0x10, RAX),
+            _ => {}
+        }
+
+        // check for failer
+        test_rr(&mut c, RAX, RAX);
+        let jz_fail = jcc32(&mut c, 0x84);
+        // Patch later to exit for now remember position
+        // Actually just patch to exit at the end
+        patch32(&mut c, jz_fail); // TEMPORARY: patch to current pos
+        // Ill fix this properly after the exit lable known
+    }
     unimplemented!()        
 }
