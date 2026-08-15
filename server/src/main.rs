@@ -2,11 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::{env::args, net::SocketAddr};
 
-use aes_gcm::Aes256Gcm;
+use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
 use axum::{Router, routing::post};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use tokio::sync::RwLock;
+use sha2::{Digest, Sha256};
 
 #[derive(Clone)]
 struct Crypto {
@@ -15,7 +16,28 @@ struct Crypto {
 
 impl Crypto {
     fn new(secret: &str) -> Self {
-        todo!();
+        let mut hasher = Sha256::new();
+        hasher.update(secret.as_bytes());
+        let key = hasher.finalize();
+        let cipher = Aes256Gcm::new_from_slice(&key).expect("Invalid Key");
+        Self { cipher }
+    }
+
+    fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, String> {
+        let nonce_bytes: [u8; 12] = rand::random();
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let ciphtertext = self.cipher.encrypt(nonce, plaintext).map_err(|e| format!("encrypt error: {:?}", e))?;
+       let mut result = nonce_bytes.to_vec();
+       result.extend(ciphtertext);
+       Ok(result) 
+    }
+
+    fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, String> {
+        if data.len() < 12 {
+            return Err("too short".into());
+        }
+        let nonce = Nonce::from_slice(&data[..12]);
+        self.cipher.decrypt(nonce, &data[12..]).map_err(|e| format!("decyrpt error: {:?}", e))
     }
 }
 
@@ -84,11 +106,8 @@ async fn main() {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
-    println!(
-        "\n[*]    Listening on {}",
-        format!("http://0.0.0.0:{}", port)
-    );
-    println!("[*]    Secret {}\n", secret);
+    println!("\n  >    Listening on {}", format!("http://0.0.0.0:{}", port));
+    println!("  >    Secret: {}\n", secret);
 
     tokio::spawn(async move {
         let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
