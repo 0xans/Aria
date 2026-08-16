@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, rc};
 
 
 pub fn find_meoware_dll() -> Option<PathBuf> {
@@ -801,6 +801,177 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     patch32(&mut c, jz_no_reloc);
     patch32(&mut c, jz_no_reloc2);
 
-    // TODO: Proccess Imports (IAT)
-    unimplemented!()        
+    // Proccess Imports (IAT)
+
+    // Import directory = DataDir[1] at NT+0x90
+    mov_rm64(&mut c, RAX, RBP, -0x28);
+    mov_rm32(&mut c, RAX, RAX, 0x90);
+    test_rr32(&mut c, RAX, RAX);
+    let jz_no_import = jcc32(&mut c, 0x84);
+    add_rr(&mut c, RAX, R15);
+    mov_rr(&mut c, RSI, RAX);
+
+    let import_loop = c.len();
+    // Check for null descriptor: OriginalFirstThunk[+0] | Name[+0xC]
+    mov_rm32(&mut c, RAX, RSI, 0);
+    mov_rm32(&mut c, RCX, RSI, 0x0C);
+    add_rr32(&mut c, RAX, RCX);
+    test_rr32(&mut c, RCX, RCX);
+    let jz_import_done = jcc32(&mut c, 0x84);
+
+    // DLL name = image_base + Name RVA
+    add_rr(&mut c, RCX, R15);
+
+    // Call LoadLibraryA(name)
+    // rcx is already set. r14 = LoadLibraryA
+    mov_mr64(&mut c, RBP, -0x48, RSI);
+    emit_call_with_shadow(&mut c, R14, 0x20);
+    mov_rm64(&mut c, RSI, RBP, -0x48);
+    test_rr(&mut c, RAX, RAX);
+    let jz_lla_fail = jcc8(&mut c, 0x74);
+
+    // rax = loaded dll handle (base)
+    mov_mr64(&mut c, RBP, -0x40, RAX);
+
+    // ILT = OriginalFirstThunk (or FirstThunk if OFT is 0)
+    mov_rm32(&mut c, RCX, RSI, 0);
+    test_rr32(&mut c, RCX, RCX);
+    let jnz_has_oft = jcc8(&mut c, 0x75);
+    mov_rm32(&mut c, RCX, RSI, 0x10);
+    patch8(&mut c, jnz_has_oft);
+    add_rr(&mut c, RCX, R15);
+    mov_mr64(&mut c, RBP, -0x50, RCX);
+    mov_mr64(&mut c, RBP, -0x50, RCX);
+
+    // IAT = FirstThunk
+    mov_rm32(&mut c, RCX, RSI, 0x10);
+    add_rr(&mut c, RCX, R15);
+    mov_mr64(&mut c, RBP, -0x58, RCX);
+
+    // Walk thunk
+    let thunk_loop = c.len();
+    mov_rm64(&mut c, RAX, RBP, -0x50);
+    mov_rm64(&mut c, RAX, RAX, 0);
+    test_rr(&mut c, RAX, RAX);
+    let jz_thunk_done = jcc32(&mut c, 0x84);
+
+    // Check ordinal (bit 63)
+    // bt rax, 32; jc skip
+    c.extend_from_slice(&[0x48, 0x0F, 0xBA, 0xE0, 0x3F]);
+    let jc_ordinal = jcc8(&mut c, 0x72);
+
+    // By name: rax = RVA = IMAGE_IMPORT_BY_NAME
+    add_rr(&mut c, RAX, R15);
+    add_ri(&mut c, RAX, 2);
+
+    // Call  GetProcAddress(dll_handle, func_name)
+    mov_rm64(&mut c, RCX, RBP, -0x40);
+    mov_rr(&mut c, RDX, RAX);
+    emit_call_with_shadow(&mut c, R13, 0x20);
+
+    // Write result to IAT
+    mov_rm64(&mut c, RCX, RBP, -0x58);
+    mov_mr64(&mut c, RAX, 0, RAX);
+
+    patch8(&mut c, jc_ordinal);
+
+    // Advance ILT and iAT: [rbp-0x50] += 8, [rbp-0x58] += 8
+    mov_rm64(&mut c, RAX, RBP, -0x50);
+    add_ri(&mut c, RAX, 8);
+    mov_mr64(&mut c, RBP, -0x50, RAX);
+    mov_rm64(&mut c, RAX, RBP, -0x58);
+    add_ri(&mut c, RAX, 8);
+    mov_mr64(&mut c, RBP, -0x58, RAX);
+
+    jmp_back(&mut c, thunk_loop);
+    patch32(&mut c, jz_thunk_done);
+
+    patch8(&mut c, jz_lla_fail);
+
+    // Next import descriptor (+20 byte)
+    add_ri(&mut c, RSI, 0x14);
+    let offset_back = (import_loop as i32) - (c.len() as i32 + 5);
+    c.push(0xE9);
+    c.extend_from_slice(&offset_back.to_le_bytes());
+
+    patch32(&mut c, jz_import_done);
+    patch32(&mut c, jz_no_import);
+
+
+    // Virtual Protect -> RX
+
+    // VirtualProtect(image_base, SizeOfImage, PAGE_EXECUTE_READWRITE, &old)
+    mov_rr(&mut c, RCX, R15);
+    mov_rm64(&mut c, RAX, RBP, -0x28);
+    mov_rm32(&mut c, RDX, RAX, 0x50);
+    mov_ri32(&mut c, R8, 0x40);
+    lea_rd(&mut c, R9, RBP, -0x48);
+    mov_rm64(&mut c, RAX, RBP, -0x10);
+    emit_call_with_shadow(&mut c, RAX, 0x20);
+
+    // Call DllMain
+    mov_rm64(&mut c, RAX, RBP, -0x28);
+    mov_rm32(&mut c, RAX, RAX, 0x28);
+    add_rr(&mut c, RAX, R15);
+
+    mov_rr(&mut c, RCX, R15);
+    mov_ri32(&mut c, RDX, 1);
+    xor_rr(&mut c, R8, R9);
+    emit_call_with_shadow(&mut c, RAX, 0x20);
+
+    // EPILOGUE
+    let exit_lable = c.len();
+    pop_r(&mut c, RDI); 
+    pop_r(&mut c, RSI);
+    pop_r(&mut c, R15); 
+    pop_r(&mut c, R14);
+    pop_r(&mut c, R13); 
+    pop_r(&mut c, R12);
+    mov_rr(&mut c, RSP, RBP);
+    pop_r(&mut c, RBP);
+    ret(&mut c);
+
+    // Patch all falure jumps to exit 
+    let exit_off = |pos: usize| -> i32 { (exit_lable as i32) - (pos as i32 + 6) };
+    let e1_off = (exit_lable as i32) - (jmp_exit_1 as i32 + 5);
+    c[jmp_exit_1 + 1] = (e1_off & 0xFF) as u8;
+    c[jmp_exit_1 + 2] = ((e1_off >> 8) & 0xFF) as u8;
+    c[jmp_exit_1 + 3] = ((e1_off >> 16) & 0xFF) as u8;
+    c[jmp_exit_1 + 4] = ((e1_off >> 24) & 0xFF) as u8;
+
+    // Patch alloc faliure jumps
+    let a1_off = exit_off(jz_alloc1_fail);
+    c[jz_alloc1_fail + 2..jz_alloc1_fail + 6].copy_from_slice(&a1_off.to_le_bytes());
+    let a2_off = exit_off(jz_alloc2_fail);
+    c[jz_alloc2_fail + 2..jz_alloc2_fail + 6].copy_from_slice(&a2_off.to_le_bytes());
+
+    // Append starting table
+    let stub_code_end = c.len();
+    let mut string_starts: Vec<usize> = Vec::new();
+    for (_, bytes) in strings {
+        string_starts.push(c.len());
+        c.extend_from_slice(bytes);
+    }
+    let str_table_size = c.len() - stub_code_end;
+
+    // Patch string lEA instructions
+    for (lea_pos, str_idx) in &str_lea_patches {
+        let offset = (string_starts[*str_idx] as i32) - 5;
+        let off_bytes = offset.to_le_bytes();
+        c[*lea_pos + 3] = off_bytes[0];
+        c[*lea_pos + 4] = off_bytes[1];
+        c[*lea_pos + 5] = off_bytes[2];
+        c[*lea_pos + 6] = off_bytes[3];
+    } 
+
+    let payload_start = c.len();
+    let po_bytes = payload_start.to_le_bytes();
+    c[lea_payload_pos + 3] = po_bytes[0];
+    // c[lea_payload_pos + 4] = po_bytes[1];
+    c[lea_payload_pos + 5] = po_bytes[2];
+    c[lea_payload_pos + 6] = po_bytes[3];
+
+    eprintln!("Stub code: {} bytes, starting table: {} bytes, total: {}", stub_code_end, str_table_size, c.len());
+
+    (c, (string_starts, str_table_size))
 }
