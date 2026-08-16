@@ -237,6 +237,13 @@ fn add_rr(c: &mut Vec<u8>, dst: u8, src: u8) {
     c.push(modrm(3, src, dst));
 }
 
+// add [base + disp], r64
+fn add_mr(c: &mut Vec<u8>, base: u8, disp: i32, src: u8) {
+    emit_rex(c, true, src, base);
+    c.push(0x01);
+    emit_modrm_mem(c, src, base, disp);
+}
+
 // shl r64, imm8
 fn shl_ri8(c: &mut Vec<u8>, reg: u8, imm: u8) {
     emit_rex(c, true, 4, reg); // /4 = shl
@@ -485,7 +492,6 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
 
     // Tested all nmaes in this module, fall to next module
     // Advance to next entry 
-    let skip_module_label = c.len();
     patch32(&mut c, jz_skip_module);
     patch32(&mut c, jne_skip_module);
     patch32(&mut c, jz_skip_module2);
@@ -509,7 +515,6 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     c.extend_from_slice(&[0, 0, 0, 0]);                 // jmp exit (patch later)
 
     // GetProcAddress found
-    let gpa_found_label = c.len();
     patch32(&mut c, je_found_gpa);
     // Patch jnz_name_loop to go back to name_loop
     let nl_off = (name_loop as i32) - (jnz_name_loop as i32 + 6);
@@ -666,7 +671,7 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     emit_call_with_shadow(&mut c, RAX, 0x20);
     pop_r(&mut c, RDX);                                 // restore SizeOfImage
     test_rr(&mut c, RAX, RAX);
-    let js_alloc2_fail = jcc32(&mut c, 0x84);
+    let jz_alloc2_fail = jcc32(&mut c, 0x84);
     mov_rr(&mut c, R15, RAX);                           // r15 = image base
 
     // Copy headers
@@ -719,6 +724,83 @@ fn gen_stub(h_gpa: u32, strings: &[(&str, Vec<u8>)]) -> (Vec<u8>, (Vec<usize>, u
     jmp_back(&mut c, sec_loop);
     patch32(&mut c, jz_sec_done);
     
-    // TODO: Process relocations
+    // Process relocations
+
+    // Delta = image_base - preferred_bae
+    mov_rm64(&mut c, RAX, RBP, -0x28);                  // NT header
+    mov_rm64(&mut c, RDX, RAX, 0x30);                   // preferred ImageBase
+    mov_rr(&mut c, RCX, R15);                           // actual base
+    sub_rr(&mut c, RCX, RDX);                           // rcx = delta
+    test_rr(&mut c, RCX, RCX);
+    let jz_no_reloc = jcc32(&mut c, 0x84);
+    mov_mr64(&mut c, RBP, -0x40, RCX);                  // save delta 
+
+    // Base relocation table = DataDir[5] at Nt+0xB0
+    mov_rm64(&mut c, RAX, RBP, -0x28);
+    mov_rm32(&mut c, RAX, RAX, 0xB0);                   // reloc table RVA
+    test_rr32(&mut c, RAX, RAX);
+    let jz_no_reloc2 = jcc32(&mut c, 0x84);
+    add_rr(&mut c, RAX, R15);                           // reloc table VA
+    mov_rr(&mut c, RSI, RAX);                           // rsi = reloc block
+
+    let reloc_outer = c.len();
+    mov_rm32(&mut c, RDX, RSI, 0x04);                   // edx = SizeOfBlock
+    test_rr32(&mut c, RDX, RDX);
+    let jz_reloc_done = jcc32(&mut c, 0x84);
+
+    mov_rm32(&mut c, RAX, RSI, 0);                      // eax = PageRVA
+    mov_mr64(&mut c, RBP, -0x48, RAX);                  // PageRVA
+
+    // Number of entries = (SizeOfBlock - 8) / 2
+    sub_ri(&mut c, RDX, 8);
+    // shr rdx, 1: (SizeOfBlock - 8) / 2 = number of entries
+    emit_rex(&mut c, true, 5, RDX);                     // REX.W
+    c.push(0xD1);
+    c.push(modrm(3, 5, RDX));                           // shr rdx, 1
+
+    lea_rd(&mut c, RDI, RSI, 8);                        // rdi = entries
+
+    let reloc_inner = c.len();
+    test_rr32(&mut c, RDX, RDX);
+    let jz_reloc_inner_done = jcc32(&mut c, 0x84);
+
+    movzx_rm16(&mut c, RAX, RDI, 0);                    // ax = entry
+    mov_rr(&mut c, RCX, RAX);
+    shl_ri8(&mut c, RCX, 0);                            // need shr rcx, 12
+    // shr ecx, 12:
+    if RCX >= 8 { emit_rex(&mut c, false, 5, RCX) }
+    c.push(0xC1);
+    c.push(modrm(3, 5, RCX));
+    c.push(12);                                         // shr ecx, 12
+    // type = ecx
+    and_ri32(&mut c, RAX, 0x0FFF);                      // offset = eax & 0xFFF
+
+    // Only process IMAGE_REL_BASED_DIR64
+    cmp_ri32(&mut c, RCX, 10);
+    let jne_skip_reloc = jcc8(&mut c, 0x75);
+
+    // *(u64*)(image + PageRVA + offset) += delta
+    add_rr(&mut c, RAX, R15);                           // + image base
+    mov_rm64(&mut c, RCX, RBP, -0x48);                  // PageRVA
+    add_rr(&mut c, RAX, RCX);                           // rax = target address
+    mov_rm64(&mut c, RCX, RBP, -0x40);                  // delta
+    add_mr(&mut c, RAX, 0, RCX);                        // [rax] += delta
+
+    patch8(&mut c, jne_skip_reloc);
+    add_ri(&mut c, RDI, 2);                             // next entry
+    dec_r32(&mut c, RDX);
+    jmp_back(&mut c, reloc_inner);
+    patch32(&mut c, jz_reloc_inner_done);
+
+    // Next block: rsi += SizeOfBlock
+    mov_rm32(&mut c, RAX, RSI, 0x04);                   // SizeOfBlock
+    add_rr(&mut c, RSI, RAX);
+    jmp_back(&mut c, reloc_outer);
+
+    patch32(&mut c, jz_reloc_done);
+    patch32(&mut c, jz_no_reloc);
+    patch32(&mut c, jz_no_reloc2);
+
+    // TODO: Proccess Imports (IAT)
     unimplemented!()        
 }
