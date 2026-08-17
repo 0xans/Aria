@@ -1,6 +1,5 @@
 pub mod amsi;
 pub mod anti_debug;
-pub mod demo;
 pub mod etw;
 pub mod hashes;
 pub mod invoke;

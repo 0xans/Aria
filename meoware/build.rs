@@ -90,7 +90,7 @@ fn main() {
     fs::write(out_path.join("c2.config.rs"), c2_config).unwrap();
 
     // Make the PE look legitimate to EDR static analysis
-    let crate_dir = PathBuf::from(env::var("CARGO_MAINFEST_DIR").unwrap());
+    let crate_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let rc_file = crate_dir.join("meoware.rc");
     let mainfest_file = crate_dir.join("meoware.mainfest");
     if rc_file.exists() && mainfest_file.exists() {

