@@ -1,3 +1,4 @@
+// Lightweight JSON builder that writes directly into a byte buffer
 pub struct JsonWriter {
     buf: Vec<u8>,
     first: bool, // trach comma for object fields
@@ -117,6 +118,7 @@ impl JsonWriter {
     }
 }
 
+// Minimal pull style JSON parser
 pub struct JsonReader<'a> {
     data: &'a [u8],
     pos: usize,

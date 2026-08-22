@@ -204,7 +204,7 @@ impl HttpSession {
             );
         }
 
-        // Senf the request
+        // Send the request
         let send_fn: FnWinHttpSendRequest = core::mem::transmute(table.win32.winhttp_send_request);
         let send_ok = send_fn(
             request,
