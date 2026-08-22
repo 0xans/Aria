@@ -77,9 +77,36 @@ unsafe fn get_rough_timestamp() -> i64 {
 
 /**
  * Resolve the current process image name from PEB at runtime
+ * PEB -> ProcessParameters -> ImagePathName (UNICODE_STRING)
  * */
 unsafe fn get_process_name_from_peb() -> String {
-    unimplemented!()
+    let peb: usize;
+    core::arch::asm!("mov {}, gs:[0x60]", out(reg) peb);
+    if peb == 0 { return String::from("unknown") }
+
+    // PEB.ProcessParameters at offset 0x20 in x64
+    let process_params = *((peb + 0x20) as *const usize);
+    if process_params == 0 { return String::from("unknwon") }
+
+    // RTL_USER_PROCESS_PARAMETERS.ImagePathName (UNICODE_STRING) at offset 0x60
+    let img_len = *((process_params + 0x60) as *const u16) as usize;
+    if img_len == 0 { return String::from("unknown") }
+    let img_wchars = img_len / 2;
+
+    let img_buf = *((process_params + 0x68) as *const usize) as *const u16;
+    if img_buf.is_null() { return String::from("unknown") }
+
+    let path = core::slice::from_raw_parts(img_buf, img_wchars);
+
+    // Finc last backslash to extract filename only
+    let mut last_sep = 0;
+    for i in 0..path.len() {
+        if path[i] == b'\\' as u16 || path[i] == b'/' as u16 {
+            last_sep = i + 1;
+        }
+    }
+
+    wide_to_string(&path[last_sep..])
 }
 
 /**
