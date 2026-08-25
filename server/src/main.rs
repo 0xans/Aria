@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Write;
 use std::sync::Arc;
 use std::{env::args, net::SocketAddr};
 
@@ -153,6 +154,57 @@ async fn handle_result() {
     unimplemented!()
 }
 
+async fn list_sessions(state: &Arc<AppState>) {
+    let sessions = state.sessions.read().await;
+    if sessions.is_empty() {
+        println!("  * No Active Sessions");
+        return;
+    }
+    println!(
+        "  {:<12} {:<20} {:<15} {:<8} {:<10} {:<8} {}",
+        "ID", "HOST", "USER", "PID", "INTEGRITY", "CHECKINS", "LAST SEEN"
+    );
+    println!("  {}", "-".repeat(90));
+    for s in sessions.values() {
+        let ago = Utc::now().signed_duration_since(s.last_seen);
+        let ago_str = if ago.num_seconds() < 60 {
+            format!("{}s ago", ago.num_seconds())
+        } else if ago.num_minutes() < 60 {
+            format!("{}m ago", ago.num_minutes())
+        } else {
+            format!("{}h ago", ago.num_hours())
+        };
+        println!(
+            "  {:<12} {:<20} {:<15} {:<8} {:<10} {:<8} {}",
+            s.id, s.hostname, s.username, s.pid, s.integrity, s.checkins, ago_str
+        );
+    }
+}
+
+async fn cli_loop(state: Arc<AppState>) {
+    // give the server a moment to start
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    loop {
+        print!("aria> ");
+        std::io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        if std::io::stdin().read_line(&mut input).is_err() {
+            break;
+        }
+        let input = input.trim();
+        if input.is_empty() {
+            continue;
+        }
+
+        let parts: Vec<&str> = input.splitn(3, ' ').collect();
+        match parts[0] {
+            "sessions" | "ls" => list_sessions(&state).await,
+            _ => println!("x Unkown command: {}", parts[0]),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let port: u16 = args()
@@ -189,5 +241,5 @@ async fn main() {
             .unwrap();
     });
 
-    unimplemented!()
+    cli_loop(state).await
 }

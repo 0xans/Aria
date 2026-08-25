@@ -60,7 +60,7 @@ fn main() {
 
     // C2 Configuration
     let c2_host = env::var("C2_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let c2_port: u16 = env::var("C2_PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(8443);
+    let c2_port: u16 = env::var("C2_PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(1337);
     let c2_https: bool = env::var("C2_HTTPS").map(|s| s == "true").unwrap_or(false);
     let c2_secret = env::var("C2_SECRET").unwrap_or_else(|_| "super-secret-key".to_string());
     let c2_interval: u64 = env::var("C2_INTERVAL").ok().and_then(|s| s.parse().ok()).unwrap_or(60000); // 60 second
