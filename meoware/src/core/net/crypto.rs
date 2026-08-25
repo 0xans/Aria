@@ -6,7 +6,7 @@ pub struct Aes256 {
 
 impl Aes256 {
     unsafe fn new(key: &[u8; 32]) -> Self {
-        let mut rk = [_mm_setzero_si128(); 15];
+        let mut rk = [_mm_setzero_si128(); 15];|
 
         let mut k0 = _mm_loadu_si128(key.as_ptr() as *const __m128i);
         let mut k1 = _mm_loadu_si128(key.as_ptr().add(16) as *const __m128i);
