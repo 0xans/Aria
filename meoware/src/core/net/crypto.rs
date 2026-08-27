@@ -23,7 +23,7 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
     while (padded.len() % 64) != 56 {
         padded.push(0);
     }
-    padded.extend_from_slice(&bit_len.to_le_bytes());
+    padded.extend_from_slice(&bit_len.to_be_bytes());
 
     for chunk in padded.chunks(64) {
         let mut w = [0u32; 64];
@@ -37,7 +37,7 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
         }
         for i in 16..64 {
             let s0 = w[i-15].rotate_right(7) ^ w[i-15].rotate_right(18) ^ (w[i-15] >> 3);
-            let s1 = w[i-2].rotate_right(17) ^ w[i-12].rotate_right(19) ^ (w[i-2] >> 10);
+            let s1 = w[i-2].rotate_right(17) ^ w[i-2].rotate_right(19) ^ (w[i-2] >> 10);
             w[i] = w[i-16].wrapping_add(s0).wrapping_add(w[i-7]).wrapping_add(s1)
         }
 
@@ -49,7 +49,7 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
             let temp1 = hh.wrapping_add(s1).wrapping_add(ch).wrapping_add(K[i]).wrapping_add(w[i]);
             let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
             let maj = (a & b) ^ (a & c) ^ (b & c);
-            let temp2 = s0.wrapping_div_euclid(maj);
+            let temp2 = s0.wrapping_add(maj);
 
             hh = g;
             g = f;
@@ -209,9 +209,9 @@ impl GfBlock {
             let carry = v.lo & 1;
             v.lo = (v.lo >> 1) | ((v.hi & 1) << 63);
             v.hi >>= 1;
-            if carry == 1 {
+            if carry == 1 { 
                 v.hi ^= 0xE100000000000000u64;
-            } 
+            }
         }
 
         // Process lo bits (GCM bits 64..127 of self)
@@ -220,11 +220,11 @@ impl GfBlock {
                 z = z.xor(v);
             }
             let carry = v.lo & 1;
-            v.lo = (v.lo >> 1) | ((v.lo & 1) << 63);
-            v.lo >>= 1;
+            v.lo = (v.lo >> 1) | ((v.hi & 1) << 63);
+            v.hi >>= 1;
             if carry == 1 {
-                v.lo ^= 0xE100000000000000u64;
-            } 
+                v.hi ^= 0xE100000000000000u64;
+            }
         }
 
         z
@@ -298,7 +298,7 @@ unsafe fn aes256_gcm_encrypt_inner(key: &[u8; 32], plaintext: &[u8]) -> Vec<u8> 
 
         let mut state = seed;
         for b in nonce.iter_mut() {
-            state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
             *b = (state >> 33) as u8;
         }
     }
@@ -348,4 +348,77 @@ unsafe fn aes256_gcm_encrypt_inner(key: &[u8; 32], plaintext: &[u8]) -> Vec<u8> 
     result.extend_from_slice(&ciphertext);
     result.extend_from_slice(&tag);
     result
+}
+
+pub fn aes256_gcm_decrypt(key: &[u8; 32], data: &[u8]) -> Option<Vec<u8>> {
+    unsafe { aes256_gcm_decrypt_inner(key, data) }
+}
+
+unsafe fn aes256_gcm_decrypt_inner(key: &[u8; 32], data: &[u8]) -> Option<Vec<u8>> {
+    if data.len() < 28 {
+        return None;
+    }
+
+    let cipher = Aes256::new(key);
+    let nonce = &data[..12];
+    let tag = &data[data.len() - 16..];
+    let ciphertext = &data[12..data.len() - 16];
+
+    // Build J0 
+    let mut j0 = [0u8; 16];
+    j0[..12].copy_from_slice(nonce);
+    j0[15] = 1;
+
+    // H for GHASH
+    let h_bytes = cipher.encrypt_block_bytes(&[0u8; 16]);
+    let h = GfBlock::from_be_bytes(&h_bytes);
+
+    // GHASH over ciphertext, to verify tag before returning plaintext
+    let mut ghash = Ghash::new(h);
+    ghash.update(ciphertext);
+    let ghash_result = ghash.finalize(0, ciphertext.len());
+
+    // Expected tag = GHASH XOR AES(K, J0)
+    let j0_enc = cipher.encrypt_block_bytes(&j0);
+    let mut expected_tag = [0u8; 16];
+    for i in 0..16 {
+        expected_tag[i] = ghash_result[i] ^ j0_enc[i];
+    }
+
+    // Constant time tag compare
+    let mut diff: u8 = 0;
+    for i in 0..16 {
+        diff |= expected_tag[i] ^ tag[i];
+    }
+    if diff != 0 {
+        return None;
+    }
+
+    // Decrypt via CTr
+    let mut counter = j0;
+    inc32(&mut counter);
+
+    let mut plaintext = vec![0u8; ciphertext.len()];
+    let full_block = ciphertext.len() / 16;
+
+    for i in 0..full_block {
+        let keystream = cipher.encrypt_block_bytes(&counter);
+        inc32(&mut counter);
+
+        let offset = i * 16;
+        for j in 0..16 {
+            plaintext[offset + j] = ciphertext[offset + j] ^ keystream[j];
+        }
+    }
+
+    let remaining = ciphertext.len() % 16;
+    if remaining > 0 {
+        let keystream = cipher.encrypt_block_bytes(&counter);
+        let offset = full_block * 16;
+        for j in 0..remaining {
+            plaintext[offset + j] = ciphertext[offset + j] ^ keystream[j];
+        }
+    }
+
+    Some(plaintext)
 }
