@@ -213,7 +213,7 @@ impl<'a> JsonReader<'a> {
         let mut found = false;
         while self.pos < self.data.len() {
             let b = self.data[self.pos];
-            if b >= b'0' && b <= b'g' {
+            if b >= b'0' && b <= b'9' {
                 val = val * 10 + (b - b'0') as u64;
                 self.pos += 1;
                 found = true
