@@ -421,8 +421,4 @@ unsafe fn aes256_gcm_decrypt_inner(key: &[u8; 32], data: &[u8]) -> Option<Vec<u8
     }
 
     Some(plaintext)
-<<<<<<< Updated upstream
 }
-=======
-}
->>>>>>> Stashed changes
