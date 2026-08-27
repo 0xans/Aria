@@ -202,6 +202,18 @@ impl HttpSession {
                 0xFFFFFFFF,
                 WINHTTP_ADDREQ_FLAG_ADD
             );
+
+            // "Accept: */*\r\n"
+            let accept: [u16; 14] = [
+                0x0041, 0x0063, 0x0063, 0x0065, 0x0070, 0x0074, 0x003A, 0x0020, // Accept:
+                0x002A, 0x002F, 0x002A, 0x000D, 0x000A, 0x0000,                 // */*\r\n\0
+            ];
+            add_hdr_fn(
+                request, 
+                accept.as_ptr(), 
+                0xFFFFFFFF, 
+                WINHTTP_ADDREQ_FLAG_ADD
+            );
         }
 
         // Send the request
