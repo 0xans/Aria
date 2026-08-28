@@ -236,7 +236,7 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> { unsafe {
     state.process_id = process_basic_information.unique_process_id;
     debug!("[GHOST] Ghost PID: {}", state.process_id);
 
-    // TODO: Read remote PEB to get the image base then cmpute entry point
+    // Read remote PEB to get the image base then cmpute entry point
     let mut remote_peb: Peb64 = core::mem::zeroed();
     let mut bytes_read: usize = 0;
 
