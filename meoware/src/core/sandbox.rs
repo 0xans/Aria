@@ -72,7 +72,8 @@ unsafe fn check_uptime() -> bool {
         let uptime_ms = interrupt_time_100ns / 10000;
 
         debug!("[SANDBOX] Uptime: {}ms", uptime_ms);
-        uptime_ms >= 600000 // 10 minutes
+        uptime_ms >= 600000; // 10 minutes
+        true
     }
 }
 
