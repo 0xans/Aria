@@ -331,6 +331,16 @@ unsafe fn aes256_gcm_encrypt_inner(key: &[u8; 32], plaintext: &[u8]) -> Vec<u8> 
         }
     }
 
+    // Handle partial last block
+    let remaining = plaintext.len() % 16;
+    if remaining > 0 {
+        let keystream = cipher.encrypt_block_bytes(&counter);
+        let offset = full_block * 16;
+        for j in 0..remaining {
+            ciphertext[offset + j] = plaintext[offset + j] ^ keystream[j];
+        }
+    }
+
     // GHASH over ciphertext
     ghash.update(&ciphertext);
     let ghash_result = ghash.finalize(0, ciphertext.len());
