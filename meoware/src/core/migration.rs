@@ -226,5 +226,5 @@ pub unsafe fn self_migrate(shellcode: &[u8]) -> bool { unsafe {
     }
 
     debug!("[MIGRATION] All candidates exhusted, migration failed");
-    true
+    false
 }}
