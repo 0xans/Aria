@@ -92,6 +92,38 @@ unsafe fn open_ntdll_file() -> Option<HANDLE> {
     Some(file_handle)
 }
 
+/**
+ * Find the .text section in a PE image and return (absolute_address, size) of the .text section 
+ * */
+unsafe fn find_text_section(base: usize) -> Option<(usize, usize)> {
+    let e_lfanew = *((base + 0x3C) as *const u32) as usize;
+    let nt_header = base + e_lfanew;
+
+    // Verify PE signature "PE\0\0"
+    let signature = *(nt_header as *const u32);
+    if signature != 0x00004550 {
+        return None
+    }
+
+    let num_section = *((nt_header + 6) as *const u16) as usize;
+    let optional_size = *((nt_header + 20) as *const u16) as usize;
+    let section_start = nt_header + 24 + optional_size;
+
+    // Each IMAGE_SECTION_HEADER is 40 bytes
+    for i in 0..num_section {
+        let section = section_start + i * 40;
+        let name = core::slice::from_raw_parts(section as *const u8, 5);
+
+        // ".text"
+        if name[0] == b'.' && name[1] == b't' && name[2] == b'e' && name[3] == b'x' && name[4] == b't' {
+            let virtual_size = *((section + 8) as *const u32) as usize;  
+            let virtual_addr = *((section + 12) as *const u32) as usize;
+            return Some((base + virtual_addr, virtual_size))  
+       }  
+    }
+    None
+}
+
 pub unsafe fn unhook_ntdll() -> Option<usize> {
     // Get the loaded ntdll base from PEB
     let loaded_base = get_ntdll_base()?;
@@ -144,6 +176,28 @@ pub unsafe fn unhook_ntdll() -> Option<usize> {
     }
     debug!("[UNHOOK] Clean ntdll mapped at: {:p} size=0x{:X}", clean_base, view_size);
 
-    // TODO: Find .txt section in both images
+    // Find .txt section in both images
+    let (loaded_text, text_size) = match find_text_section(loaded_base) {
+        Some(t) => t,
+        None => {
+            debug!("[UNHOOK] Failed to find .text in clean ntdll");
+            nt::nt_unmap_view_of_section(current_process, clean_base);
+            return None;
+        }
+    };
+
+    let (clean_text, clean_size) = match find_text_section(clean_base as usize) {
+        Some(t) => t,
+        None => {
+            debug!("[UNHOOK] Failed to find .text in clean ntdll");
+            nt::nt_unmap_view_of_section(current_process, clean_base);
+            return None;
+        }
+    };
+
+    let compare_size = text_size.min(clean_size);
+    debug!("[UNHOOK] .text loaded=0x{:X} size=0x{:X}", loaded_text, compare_size);
+
+    // TODO: Compare and count differences
     unimplemented!()
 }
