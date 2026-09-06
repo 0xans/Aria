@@ -74,7 +74,7 @@ unsafe fn get_current_pid() -> u32 {
  * THIS IS NOT ACCURATE
  * */
 unsafe fn get_rough_timestamp() -> i64 {
-    let kuser_shared = 0x7FFE000usize as *const u8;
+    let kuser_shared = 0x7FFE0000usize  as *const u8;
     // offset 0x14: SystemTime.LowPart, 0x18: SystemTime.High1Time
     let low = *(kuser_shared.add(0x14) as *const u32) as u64;
     let high = *(kuser_shared.add(0x18) as *const u32) as u64;
