@@ -84,7 +84,7 @@ pub struct Aes256 {
 }
 
 impl Aes256 {
-    unsafe fn new(key: &[u8; 32]) -> Self {
+    unsafe fn new(key: &[u8; 32]) -> Self { unsafe {
         let mut rk = [_mm_setzero_si128(); 15];
 
         let mut k0 = _mm_loadu_si128(key.as_ptr() as *const __m128i);
@@ -135,9 +135,9 @@ impl Aes256 {
         expand_odd!(13);
         expand_even!(0x40, 14);
         Aes256 { round_keys: rk }
-    }
+    }}
 
-    unsafe fn encrypt_block(&self, block: __m128i) -> __m128i {
+    unsafe fn encrypt_block(&self, block: __m128i) -> __m128i { unsafe {
         let mut state = _mm_xor_si128(block, self.round_keys[0]);
         state = _mm_aesenc_si128(state, self.round_keys[1]);
         state = _mm_aesenc_si128(state, self.round_keys[2]);
@@ -153,15 +153,15 @@ impl Aes256 {
         state = _mm_aesenc_si128(state, self.round_keys[12]);
         state = _mm_aesenc_si128(state, self.round_keys[13]);
         _mm_aesenclast_si128(state, self.round_keys[14])
-    }
+    }}
 
-    unsafe fn encrypt_block_bytes(&self, input: &[u8; 16]) -> [u8; 16] {
+    unsafe fn encrypt_block_bytes(&self, input: &[u8; 16]) -> [u8; 16] { unsafe {
         let block = _mm_loadu_si128(input.as_ptr() as *const __m128i);
         let enc = self.encrypt_block(block);
         let mut out = [0u8; 16];
         _mm_storeu_si128(out.as_mut_ptr() as *mut __m128i, enc);
         out
-    }
+    }}
 }
 
 #[derive(Clone, Copy)]
@@ -281,7 +281,7 @@ pub fn aes256_gcm_encrypt(key: &[u8; 32], plaintext: &[u8]) -> Vec<u8> {
     unsafe { aes256_gcm_encrypt_inner(key, plaintext) }
 }
 
-unsafe fn aes256_gcm_encrypt_inner(key: &[u8; 32], plaintext: &[u8]) -> Vec<u8> {
+unsafe fn aes256_gcm_encrypt_inner(key: &[u8; 32], plaintext: &[u8]) -> Vec<u8> { unsafe {
     let cipher = Aes256::new(key);
 
     // Generate 12 bytes nonce from RDTSC
@@ -358,13 +358,13 @@ unsafe fn aes256_gcm_encrypt_inner(key: &[u8; 32], plaintext: &[u8]) -> Vec<u8> 
     result.extend_from_slice(&ciphertext);
     result.extend_from_slice(&tag);
     result
-}
+}}
 
 pub fn aes256_gcm_decrypt(key: &[u8; 32], data: &[u8]) -> Option<Vec<u8>> {
     unsafe { aes256_gcm_decrypt_inner(key, data) }
 }
 
-unsafe fn aes256_gcm_decrypt_inner(key: &[u8; 32], data: &[u8]) -> Option<Vec<u8>> {
+unsafe fn aes256_gcm_decrypt_inner(key: &[u8; 32], data: &[u8]) -> Option<Vec<u8>> { unsafe {
     if data.len() < 28 {
         return None;
     }
@@ -431,4 +431,4 @@ unsafe fn aes256_gcm_decrypt_inner(key: &[u8; 32], data: &[u8]) -> Option<Vec<u8
     }
 
     Some(plaintext)
-}
+}}
