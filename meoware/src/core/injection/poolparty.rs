@@ -207,7 +207,7 @@ pub unsafe fn migrate(shellcode: &[u8], process_handle: HANDLE, target_pid: usiz
     nt::nt_close(section_handle);
 
     if status != STATUS_SUCCESS || remote_shellcode.is_null() {
-        debug!("[POOL] NtMapViewOfSection (remote RW) failed: 0x{:08X}", status);
+        debug!("[POOL] NtMapViewOfSection (remote RX) failed: 0x{:08X}", status);
         return false;
     }
 
