@@ -16,7 +16,7 @@ const NTDLL_PATH: &[u16] = &[
 ];
 
 
-unsafe fn get_ntdll_base() -> Option<usize> {
+unsafe fn get_ntdll_base() -> Option<usize> { unsafe {
     let peb: usize;
     core::arch::asm!(
         "mov {}, gs:[0x60]",
@@ -43,9 +43,9 @@ unsafe fn get_ntdll_base() -> Option<usize> {
     if dos != 0x5A4D { return None }
 
     Some(base)
-}
+}}
 
-unsafe fn open_ntdll_file() -> Option<HANDLE> {
+unsafe fn open_ntdll_file() -> Option<HANDLE> { unsafe {
     // Build UNICODE_STRING for the NT path
     let path_bytes = (NTDLL_PATH.len() - 1) * 2; // exclude null terminator
     let unicode_string = UnicodeString {
@@ -90,12 +90,12 @@ unsafe fn open_ntdll_file() -> Option<HANDLE> {
     }
 
     Some(file_handle)
-}
+}}
 
 /**
  * Find the .text section in a PE image and return (absolute_address, size) of the .text section 
  * */
-unsafe fn find_text_section(base: usize) -> Option<(usize, usize)> {
+unsafe fn find_text_section(base: usize) -> Option<(usize, usize)> { unsafe {
     let e_lfanew = *((base + 0x3C) as *const u32) as usize;
     let nt_header = base + e_lfanew;
 
@@ -122,9 +122,9 @@ unsafe fn find_text_section(base: usize) -> Option<(usize, usize)> {
        }  
     }
     None
-}
+}}
 
-pub unsafe fn unhook_ntdll() -> Option<usize> {
+pub unsafe fn unhook_ntdll() -> Option<usize> { unsafe {
     // Get the loaded ntdll base from PEB
     let loaded_base = get_ntdll_base()?;
     debug!("[UNHOOK] Loaded ntdll base: 0x{:X}", loaded_base);
@@ -258,4 +258,4 @@ pub unsafe fn unhook_ntdll() -> Option<usize> {
 
     debug!("[UNHOOK] ntdll .text restored - {} bytes fixed", diff_count);
     Some(diff_count)
-}
+}}
