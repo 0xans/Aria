@@ -16,3 +16,4 @@ pub mod injection;
 pub mod net;
 pub mod sleep;
 pub mod ntdll_unhook;
+pub mod commands;
