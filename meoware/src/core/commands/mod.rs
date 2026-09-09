@@ -1,3 +1,5 @@
+pub mod sysinfo;
+
 fn split_command_line(input: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
@@ -71,9 +73,28 @@ pub unsafe fn execute_command(cmd_type: &str, args: &[String]) -> Result<String,
                         }
                     }
                 }
-                "head" => todo!(),
-                "tail" => todo!(),
-                "wc" => todo!(),
+                "head" => {
+                    let n: usize = filter_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(10);
+                    Ok(result.lines().take(n).map(|l| {
+                        let mut s = String::from(l);
+                        s.push('\n');
+                        s
+                    }).collect())
+                }
+                "tail" => {
+                    let n: usize = filter_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(10);
+                    let lines: Vec<&str> = result.lines().collect();
+                    let start = lines.len().saturating_sub(n);
+                    Ok(lines[start..].iter().map(|l| {
+                        let mut s = String::from(*l);
+                        s.push('\n');
+                        s
+                    }).collect())
+                },
+                "wc" => {
+                    let count = result.lines().count();
+                    Ok(alloc::format!("{} lines\n", count))
+                },
                 _ => Err(alloc::format!("Unkown filter: {}", filter_parts[0])),
             }
         }
@@ -108,7 +129,7 @@ unsafe fn dispatch(cmd: &str, args: &[String]) -> Result<String, String> {
         "ps"                    => todo!(),
         "kill"                  => todo!(),
         "whoami"                => todo!(),
-        "sysinfo"               => todo!(),
+        "sysinfo"               => sysinfo::cmd_sysinfo(),
         "netstat"               => todo!(),
         "ifconfig" | "ipconfig" => todo!(),
         //...
