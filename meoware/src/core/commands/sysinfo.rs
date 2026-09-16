@@ -1,3 +1,5 @@
+use std::ffi::c_void;
+
 use crate::core::{invoke, ssn_table};
 
 fn wide_to_string(wide: &[u16]) -> String {
@@ -113,5 +115,58 @@ pub unsafe fn cmd_sysinfo() -> Result<String, String> {
 }
 
 unsafe fn query_integrity() -> &'static str {
-    unimplemented!()
+    let table = ssn_table::syscall_table();
+    if table.ssns.nt_open_process_token.ssn == 0 || table.ssns.nt_query_information_token.ssn == 0 {
+        return "unkwon"
+    }
+
+    let mut token_handle: *mut c_void = core::ptr::null_mut();
+    let current_process = -1isize as *mut c_void;
+
+    let status = invoke::syscall3(
+        table.ssns.nt_open_process_token.ssn, 
+        table.ssns.nt_open_process_token.syscall_addr as usize,
+        current_process as usize,
+        0x0008, // TOKEN_QUERY
+        &mut token_handle as *mut _ as usize,
+    );
+
+    if status != 0 || token_handle.is_null() {
+        return "unkown";
+    }
+
+    let mut buf = [0u8; 64];
+    let mut return_len: u32 = 0;
+    let status = invoke::syscall5(
+        table.ssns.nt_query_information_token.ssn,
+        table.ssns.nt_query_information_token.syscall_addr as usize,
+        token_handle as usize,
+        25, // TokenIntegrityLevel
+        buf.as_mut_ptr() as usize,
+        64,
+        &mut return_len as *mut u32 as usize,
+    );
+
+
+    if status != 0 {
+        return "unkown"
+    }
+
+    let sid_ptr = *(buf.as_ptr() as *const *const u8);
+    if sid_ptr.is_null() {
+        return "unkown";
+    }
+
+    let sub_auth_count = *sid_ptr.add(1) as usize;
+    if sub_auth_count == 0 { return "unkown" }
+    let rid_offset = 8 + (sub_auth_count - 1) * 4;
+    let rid = *(sid_ptr.add(rid_offset) as *const u32);
+
+    match rid {
+        0x0000..=0x0FFF => "untrusted",
+        0x1000..=0x1FFF => "low",
+        0x2000..=0x2FFF => "medium",
+        0x3000..=0x3FFF => "high",
+        0x4000.. => "system",
+    }
 }
