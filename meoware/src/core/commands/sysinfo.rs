@@ -30,10 +30,10 @@ pub unsafe fn cmd_sysinfo() -> Result<String, String> {
         if func(3, buf.as_mut_ptr(), &mut size) != 0 {
             wide_to_string(&buf[..size as usize])
         } else {
-            String::from("unkown")
+            String::from("unknown")
         }
     } else {
-        String::from("unkown")
+        String::from("unknown")
     };
 
     // Username
@@ -45,10 +45,10 @@ pub unsafe fn cmd_sysinfo() -> Result<String, String> {
         if func(buf.as_mut_ptr(), &mut size) != 0 && size > 1 {
             wide_to_string(&buf[..size as usize - 1])
         } else {
-            String::from("unkown")
+            String::from("unknown")
         }
     }  else {
-        String::from("unkown")
+        String::from("unknown")
     };
 
     // OS version
@@ -102,6 +102,7 @@ pub unsafe fn cmd_sysinfo() -> Result<String, String> {
     };
 
     let integrity = query_integrity(); 
+    
     output.push_str(&alloc::format!("  Hostname   : {}\n", hostname));
     output.push_str(&alloc::format!("  Username   : {}\n", username));
     output.push_str(&alloc::format!("  OS         : Windows {}.{} Build {}\n", os_info.major_version, os_info.minor_version, os_info.build_number));
@@ -117,7 +118,7 @@ pub unsafe fn cmd_sysinfo() -> Result<String, String> {
 unsafe fn query_integrity() -> &'static str {
     let table = ssn_table::syscall_table();
     if table.ssns.nt_open_process_token.ssn == 0 || table.ssns.nt_query_information_token.ssn == 0 {
-        return "unkwon"
+        return "unknown"
     }
 
     let mut token_handle: *mut c_void = core::ptr::null_mut();
@@ -132,7 +133,7 @@ unsafe fn query_integrity() -> &'static str {
     );
 
     if status != 0 || token_handle.is_null() {
-        return "unkown";
+        return "unknown";
     }
 
     let mut buf = [0u8; 64];
@@ -149,16 +150,16 @@ unsafe fn query_integrity() -> &'static str {
 
 
     if status != 0 {
-        return "unkown"
+        return "unknown"
     }
 
     let sid_ptr = *(buf.as_ptr() as *const *const u8);
     if sid_ptr.is_null() {
-        return "unkown";
+        return "unknown";
     }
 
     let sub_auth_count = *sid_ptr.add(1) as usize;
-    if sub_auth_count == 0 { return "unkown" }
+    if sub_auth_count == 0 { return "unknown" }
     let rid_offset = 8 + (sub_auth_count - 1) * 4;
     let rid = *(sid_ptr.add(rid_offset) as *const u32);
 
@@ -167,6 +168,6 @@ unsafe fn query_integrity() -> &'static str {
         0x1000..=0x1FFF => "low",
         0x2000..=0x2FFF => "medium",
         0x3000..=0x3FFF => "high",
-        0x4000.. => "system",
+        0x4000..        => "system",
     }
 }
