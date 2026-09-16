@@ -17,6 +17,43 @@ fn wide_to_string(wide: &[u16]) -> String {
     s
 }
 
+pub unsafe fn cmd_whoami() -> Result<String, String> {
+    let table = ssn_table::syscall_table();
+
+    let username = if !table.win32.get_user_name_w.is_null() {
+        type FnGetUserNameW = unsafe extern "system" fn(*mut u16, *mut u32) -> i32;
+        let func: FnGetUserNameW = core::mem::transmute(table.win32.get_user_name_w);
+        let mut buf = [0u16; 64];
+        let mut size: u32 = 64;
+        if func(buf.as_mut_ptr(), &mut size) != 0 && size > 1 {
+            wide_to_string(&buf[..size as usize - 1])
+        } else {
+            String::from("unknown")
+        }
+    }  else {
+        String::from("unknown")
+    };
+
+    // Hostname
+    let hostname = if !table.win32.get_computer_name_ex_w.is_null() {
+        type FnGetComputerNameExW = unsafe extern "system" fn(u32, *mut u16, *mut u32) -> i32;
+        let func: FnGetComputerNameExW = core::mem::transmute(table.win32.get_computer_name_ex_w);
+        let mut buf = [0u16; 64];
+        let mut size: u32 = 64;
+        if func(3, buf.as_mut_ptr(), &mut size) != 0 {
+            wide_to_string(&buf[..size as usize])
+        } else {
+            String::from("unknown")
+        }
+    } else {
+        String::from("unknown")
+    };
+
+    let integrity = query_integrity();
+
+    Ok(alloc::format!("{}\\{} ({})", hostname, username, integrity))
+}
+
 pub unsafe fn cmd_sysinfo() -> Result<String, String> {
     let table = ssn_table::syscall_table();
     let mut output = String::with_capacity(512);
@@ -102,7 +139,7 @@ pub unsafe fn cmd_sysinfo() -> Result<String, String> {
     };
 
     let integrity = query_integrity(); 
-    
+
     output.push_str(&alloc::format!("  Hostname   : {}\n", hostname));
     output.push_str(&alloc::format!("  Username   : {}\n", username));
     output.push_str(&alloc::format!("  OS         : Windows {}.{} Build {}\n", os_info.major_version, os_info.minor_version, os_info.build_number));
