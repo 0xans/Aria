@@ -153,9 +153,9 @@ pub unsafe fn cmd_sysinfo() -> Result<String, String> {
     Ok(output)
 }
 
-unsafe fn cmd_env() -> Result<String, String> {
+pub unsafe fn cmd_env() -> Result<String, String> {
     let peb: u64;
-    core::arch::asm!("mov {}, gs[0x60]", out(reg) peb);
+    core::arch::asm!("mov {}, gs:[0x60]", out(reg) peb);
 
     // PEB.ProcessParameters at offset 0x20
     let params = *((peb + 0x20) as *const u64);
