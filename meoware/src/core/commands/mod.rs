@@ -1,5 +1,65 @@
 pub mod sysinfo;
+pub mod fs;
 
+extern crate alloc;
+use alloc::string::String;
+
+static mut CURRENT_DIR: Option<String> = None;
+
+pub unsafe fn get_cwd() -> String {
+    if let Some(ref dir) = CURRENT_DIR {
+        dir.clone() 
+    } else {
+        // Initialize from PEB -> ProcessParameters -> CurrentDirectory
+        let dir = read_peb_cwd();
+        CURRENT_DIR = Some(dir.clone());
+        dir
+    }
+}
+
+pub unsafe fn set_cwd(path: String) {
+    CURRENT_DIR = Some(path)
+}
+
+unsafe fn read_peb_cwd() -> String {
+    let peb: u64;
+    core::arch::asm!("mov {}, gs:[0x60]", out(reg) peb);
+
+    // PEB.ProcessParameters at offset 0x20 (8 bytes pointer)
+    let params = *((peb + 0x20) as *const u64);
+    if params == 0 {
+        return String::from("C:\\");
+    }
+
+    // RTL_USER_PROCESS_PARAMETERS.CurrentDirectory.DosPath is a UNICODE_STRING at offset 0x38
+    // Length(u16), MaxLenght(u16), padding(u32), Buffer(*u16)
+    let length = *((params + 0x38) as *const u16) as usize;
+    let buffer = *((params + 0x38 + 8) as *const *const u16);
+
+    if buffer.is_null() || length == 0 {
+        return String::from("C:\\");
+    }  
+
+    let char_count = length / 2;
+    let mut s = String::with_capacity(char_count);
+    for i in 0..char_count {
+        let c = *buffer.add(i);
+        if c == 0 {
+            break;
+        }
+        s.push(if c < 128 {
+            c as u8 as char
+        } else { '?' });
+
+        // Remove trailing backslash if not root
+        if s.len() > 3 && s.ends_with('\\') {
+            s.pop();
+        }
+    }
+
+    s
+}
+ 
 fn split_command_line(input: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
