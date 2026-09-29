@@ -177,7 +177,7 @@ pub unsafe fn execute_command(cmd_type: &str, args: &[String]) -> Result<String,
 unsafe fn dispatch(cmd: &str, args: &[String]) -> Result<String, String> {
     match cmd {
         "pwd"                   => fs::cmd_pwd(),
-        "cd"                    => todo!(),
+        "cd"                    => fs::cmd_cd(args),
         "ls"                    => todo!(),
         "cat"                   => todo!(),
         "rm"                    => todo!(),
