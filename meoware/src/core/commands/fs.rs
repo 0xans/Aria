@@ -47,6 +47,23 @@ pub unsafe fn cmd_cd(args: &[String]) -> Result<String, String> {
     let nt_path = to_nt_path(target);
     let mut unicode_str = core::mem::zeroed::<UnicodeString>();
     let mut obj_attr = core::mem::zeroed::<ObjectAttributes>();
-    todo!("build_boject_attributes()");
+    build_boject_attributes(&nt_path, &mut unicode_str, &mut obj_attr);
+
     unimplemented!()      
+}
+
+unsafe fn build_boject_attributes(nt_path: &[u16], unicode_str: &mut UnicodeString, obj_attr: &mut ObjectAttributes) {
+    let byte_len = (nt_path.len() - 1) * 2; // exclude null for length
+    let max_len = nt_path.len() * 2;
+    *unicode_str = UnicodeString { 
+        length: byte_len as u16, maximum_length: max_len as u16, buffer: nt_path.as_ptr() 
+    };
+    *obj_attr = ObjectAttributes {
+        length: core::mem::size_of::<ObjectAttributes>() as u32,
+        root_directory: core::ptr::null_mut(),
+        object_name: unicode_str as *mut UnicodeString,
+        attributes: 0x40,
+        security_descriptor: core::ptr::null_mut(),
+        security_quality_of_service: core::ptr::null_mut(),
+    };
 }
