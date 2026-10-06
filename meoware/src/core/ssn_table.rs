@@ -47,6 +47,7 @@ pub struct SyscallSsns {
     pub(crate) nt_create_file: SyscallEntry,
     pub(crate) nt_write_file: SyscallEntry,
     pub(crate) nt_read_file: SyscallEntry,
+    pub(crate) nt_query_directory_file: SyscallEntry,
     pub(crate) nt_set_information_file: SyscallEntry,
     pub(crate) nt_create_section: SyscallEntry,
     pub(crate) nt_create_process_ex: SyscallEntry,
@@ -138,6 +139,7 @@ static NATIVE: SyscallCell = SyscallCell(UnsafeCell::new(SyscallInfo {
         nt_create_file: SyscallEntry::empty(),
         nt_write_file: SyscallEntry::empty(),
         nt_read_file: SyscallEntry::empty(),
+        nt_query_directory_file: SyscallEntry::empty(),
         nt_set_information_file: SyscallEntry::empty(),
         nt_create_section: SyscallEntry::empty(),
         nt_create_process_ex: SyscallEntry::empty(),
@@ -252,6 +254,7 @@ pub unsafe fn initialize_syscalls(mut ntdll: *mut c_void) -> bool {
         resolve_ssn!(nt_create_file, hashes::NTCREATEFILE_HASH);
         resolve_ssn!(nt_write_file, hashes::NTWRITEFILE_HASH);
         resolve_ssn!(nt_read_file, hashes::NTREADFILE_HASH);
+        resolve_ssn!(nt_query_directory_file, hashes::NTQUERYDIRECTORYFILE_HASH);
         resolve_ssn!(nt_set_information_file, hashes::NTSETINFORMATIONFILE_HASH);
         resolve_ssn!(nt_create_section, hashes::NTCREATESECTION_HASH);
         resolve_ssn!(nt_create_process_ex, hashes::NTCREATEPROCESSEX_HASH);
