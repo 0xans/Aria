@@ -178,7 +178,7 @@ unsafe fn dispatch(cmd: &str, args: &[String]) -> Result<String, String> {
     match cmd {
         "pwd"                   => fs::cmd_pwd(),
         "cd"                    => fs::cmd_cd(args),
-        "ls"                    => todo!(),
+        "ls"                    => fs::cmd_ls(args),
         "cat"                   => todo!(),
         "rm"                    => todo!(),
         "mkdir"                 => todo!(),
