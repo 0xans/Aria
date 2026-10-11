@@ -12,6 +12,9 @@ const FILE_SHARE_READ: u32 = 0x00000001;
 const FILE_SHARE_WRITE: u32 = 0x00000002;
 const SYNCHRONIZE: u32 = 0x00100000;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x00000010;
+const FILE_SHARE_DELETE: u32 = 0x00000004;
+const FILE_READ_DATA: u32 = 0x0001;
+const FILE_ATTRIBUTE_NORMAL: u32 = 0x00000080;
 
 fn to_nt_path(path: &str) -> Vec<u16> {
     let full_path = if path .len() >= 2 && path.as_bytes()[1] == b':' {
@@ -199,7 +202,82 @@ pub unsafe fn cmd_ls(args: &[String]) -> Result<String, String> {
     }
 }
 
+pub unsafe fn cmd_cat(args: &[String]) -> Result<String, String> {
+    if args.is_empty() {
+        return Err(String::from("Usage: cat <file>"))
+    }
 
+    let nt_path = to_nt_path(&args[0]);
+    let mut unicode_str = core::mem::zeroed::<UnicodeString>();
+    let mut obj_attr = core::mem::zeroed::<ObjectAttributes>();
+    build_boject_attributes(&nt_path, &mut unicode_str, &mut obj_attr);
+
+    let mut handle: HANDLE = core::ptr::null_mut();
+    let mut io_status = IoStatusBlock { status: 0, information: 0};
+
+    let status = nt::nt_create_file(
+        &mut handle,
+        FILE_READ_DATA | SYNCHRONIZE,
+        &mut obj_attr,
+        &mut io_status,
+        core::ptr::null_mut(),
+        FILE_ATTRIBUTE_NORMAL,
+        FILE_SHARE_READ,
+        FILE_OPEN,
+        FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+        core::ptr::null_mut(),
+        0,
+    );
+
+    if status != 0 {
+        return Err(alloc::format!("Cannot Open file 0x{:08x}", status));
+    }
+
+    let table = ssn_table::syscall_table();
+
+    // Read file in chunks
+    let mut contents: Vec<u8> = Vec::new();
+    let mut buf = [0u8; 4096];
+
+    loop {
+        io_status = IoStatusBlock { status: 0, information: 0 };
+
+        let status = invoke::syscall9(table.ssns.nt_read_file.ssn, table.ssns.nt_read_file.syscall_addr as usize, handle as usize,
+            0,      // Event 
+            0,      // AppRotine
+            0,      // AppContext
+            &mut io_status as *mut _ as usize,
+            buf.as_mut_ptr() as usize,
+            buf.len(),
+            0,      // ByteOffset
+            0,      // Key
+        );
+    
+        if status != 0 || io_status.information == 0 {
+            break;
+        }
+
+        contents.extend_from_slice(&buf[..io_status.information]);
+    }
+
+    invoke::syscall1(table.ssns.nt_close.ssn, table.ssns.nt_close.syscall_addr as usize, handle as usize);
+
+    // Convert to lossy string
+    match core::str::from_utf8(&contents) {
+        Ok(s) => Ok(String::from(s)),
+        Err(_) => {
+            // Show hex summary 
+            let preview_len = core::cmp::min(contents.len(), 256);
+            let mut hex = String::with_capacity(preview_len * 3);
+            hex.push_str(&alloc::format!("[Binary file, {} bytes\n", contents.len())); 
+            for (i, &b) in contents[..preview_len].iter().enumerate() {
+                hex.push_str(&alloc::format!("{:02x} ", b));
+                if (i + 1) % 16 == 0 { hex.push('\n'); }
+            }
+            Ok(hex)
+        }
+    }
+}
 
 unsafe fn build_boject_attributes(nt_path: &[u16], unicode_str: &mut UnicodeString, obj_attr: &mut ObjectAttributes) {
     let byte_len = (nt_path.len() - 1) * 2; // exclude null for length
