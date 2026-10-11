@@ -179,7 +179,7 @@ unsafe fn dispatch(cmd: &str, args: &[String]) -> Result<String, String> {
         "pwd"                   => fs::cmd_pwd(),
         "cd"                    => fs::cmd_cd(args),
         "ls"                    => fs::cmd_ls(args),
-        "cat"                   => todo!(),
+        "cat"                   => fs::cmd_cat(args),
         "rm"                    => todo!(),
         "mkdir"                 => todo!(),
         "cp"                    => todo!(),
