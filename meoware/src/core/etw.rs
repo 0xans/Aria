@@ -55,9 +55,9 @@ unsafe fn thread_hide_from_debugger() {
     );
 
     if status == 0 {
-        debug!("[ETW] ThreadHideFromDebugger set - thread hidden from debuggers")
+        debug!("[ETW] ThreadHideFromDebugger set — thread hidden from debuggers");
     } else {
-        debug!("[ETW] ThreadHideFromDebugger failed: 0x{:08X}", status)
+        debug!("[ETW] ThreadHideFromDebugger failed: 0x{:08X}", status);
     }
 }
 
