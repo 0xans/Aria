@@ -62,6 +62,7 @@ pub struct SyscallSsns {
     pub(crate) nt_set_context_thread: SyscallEntry,
     pub(crate) nt_map_view_of_section: SyscallEntry,
     pub(crate) nt_unmap_view_of_section: SyscallEntry,
+    pub(crate) nt_set_information_thread: SyscallEntry,
     pub(crate) nt_open_process_token: SyscallEntry,
     pub(crate) nt_query_information_token: SyscallEntry,
     pub(crate) nt_delay_execution: SyscallEntry,
@@ -154,6 +155,7 @@ static NATIVE: SyscallCell = SyscallCell(UnsafeCell::new(SyscallInfo {
         nt_set_context_thread: SyscallEntry::empty(),
         nt_map_view_of_section: SyscallEntry::empty(),
         nt_unmap_view_of_section: SyscallEntry::empty(),
+        nt_set_information_thread: SyscallEntry::empty(),
         nt_open_process_token: SyscallEntry::empty(),
         nt_query_information_token: SyscallEntry::empty(),
         nt_delay_execution: SyscallEntry::empty(),
@@ -278,6 +280,7 @@ pub unsafe fn initialize_syscalls(mut ntdll: *mut c_void) -> bool {
         resolve_ssn!(nt_set_context_thread, hashes::NTSETCONTEXTTHREAD_HASH);
         resolve_ssn!(nt_map_view_of_section, hashes::NTMAPVIEWOFSECTION_HASH);
         resolve_ssn!(nt_unmap_view_of_section, hashes::NTUNMAPVIEWOFSECTION_HASH);
+        resolve_ssn!(nt_open_process_token, hashes::NTOPENPROCESSTOKEN_HASH);
         resolve_ssn!(nt_open_process_token, hashes::NTOPENPROCESSTOKEN_HASH);
         resolve_ssn!(
             nt_query_information_token,
