@@ -31,6 +31,20 @@ pub unsafe fn nt_close(handle: HANDLE) -> NTSTATUS {
     }
 }
 
+pub unsafe fn nt_sleep(ms: u64) {
+    let table = ssn_table::syscall_table();
+    let e = &table.ssns.nt_delay_execution;
+    if e.ssn == 0 { return; }
+    // 100-nanosecond intervals, negative = relative
+    let mut delay: i64 = -((ms * 10_000) as i64);
+    invoke::syscall2(
+        e.ssn,
+        e.syscall_addr as usize,
+        0, // Alertable = FALSE
+        &mut delay as *mut _ as usize,
+    );
+}
+
 pub unsafe fn nt_allocate_virtual_memory(
     process_handle: HANDLE,
     base_address: *mut *mut c_void,
